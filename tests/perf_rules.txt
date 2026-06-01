@@ -1,0 +1,2 @@
+show literal ERROR
+hide literal DEBUG
