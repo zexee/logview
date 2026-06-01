@@ -1,2 +1,2 @@
-show literal ERROR
-hide literal DEBUG
+ss ERROR
+hh DEBUG

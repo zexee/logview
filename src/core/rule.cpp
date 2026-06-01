@@ -30,7 +30,16 @@ bool Rule::passes(std::string_view line) const {
 }
 
 std::string Rule::serialize() const {
-    return std::string(to_string(action_)) + " " + to_string(type_) + " " + pattern_;
+    if (action_ == RuleAction::Show && type_ == RuleMatchType::Regex) {
+        return "s " + pattern_;
+    }
+    if (action_ == RuleAction::Hide && type_ == RuleMatchType::Regex) {
+        return "h " + pattern_;
+    }
+    if (action_ == RuleAction::Show && type_ == RuleMatchType::Literal) {
+        return "ss " + pattern_;
+    }
+    return "hh " + pattern_;
 }
 
 const char* to_string(RuleAction action) {

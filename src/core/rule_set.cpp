@@ -17,25 +17,25 @@ std::string trim(std::string text) {
     return text;
 }
 
-bool parse_action(const std::string& token, RuleAction* action) {
-    if (token == "show") {
+bool parse_rule_operator(const std::string& token, RuleAction* action, RuleMatchType* type) {
+    if (token == "s") {
         *action = RuleAction::Show;
+        *type = RuleMatchType::Regex;
         return true;
     }
-    if (token == "hide") {
+    if (token == "h") {
         *action = RuleAction::Hide;
+        *type = RuleMatchType::Regex;
         return true;
     }
-    return false;
-}
-
-bool parse_type(const std::string& token, RuleMatchType* type) {
-    if (token == "literal") {
+    if (token == "ss") {
+        *action = RuleAction::Show;
         *type = RuleMatchType::Literal;
         return true;
     }
-    if (token == "regex") {
-        *type = RuleMatchType::Regex;
+    if (token == "hh") {
+        *action = RuleAction::Hide;
+        *type = RuleMatchType::Literal;
         return true;
     }
     return false;
@@ -131,17 +131,13 @@ void RuleSet::clear() {
 
 RuleParseResult RuleSet::parse_line(const std::string& line) {
     std::istringstream input(line);
-    std::string action_token;
-    std::string type_token;
-    input >> action_token >> type_token;
+    std::string operator_token;
+    input >> operator_token;
 
     RuleAction action = RuleAction::Show;
     RuleMatchType type = RuleMatchType::Literal;
-    if (!parse_action(action_token, &action)) {
-        return {.ok = false, .error = "expected action 'show' or 'hide'"};
-    }
-    if (!parse_type(type_token, &type)) {
-        return {.ok = false, .error = "expected match type 'literal' or 'regex'"};
+    if (!parse_rule_operator(operator_token, &action, &type)) {
+        return {.ok = false, .error = "expected rule operator 's', 'h', 'ss', or 'hh'"};
     }
 
     std::string pattern;

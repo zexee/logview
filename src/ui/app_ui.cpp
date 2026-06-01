@@ -419,7 +419,7 @@ void AppUi::begin_rule_edit() {
 void AppUi::begin_rule_add() {
     editing_rule_ = true;
     adding_rule_ = true;
-    editor_.start("", "show literal ");
+    editor_.start("", "ss ");
 }
 
 void AppUi::delete_selected_rule() {
@@ -456,7 +456,7 @@ void AppUi::move_selected_rule_down() {
 
 std::string AppUi::selected_rule_text() const {
     if (rules_.empty()) {
-        return "show literal ";
+        return "ss ";
     }
     return rules_[rule_cursor_].serialize();
 }

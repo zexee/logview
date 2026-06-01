@@ -52,16 +52,22 @@ line 1 -> rule 0 -> rule 1 -> rule 2 -> set final bit
 先使用简单文本格式，便于调试：
 
 ```text
-show literal ERROR
-hide literal DEBUG
-show regex user=[0-9]+
+ss ERROR
+hh DEBUG
+s user=[0-9]+
 ```
 
 字段：
 
-- 第 1 列：`show` 或 `hide`
-- 第 2 列：`literal` 或 `regex`
-- 第 3 列到行尾：匹配表达式
+- 第 1 列：`s`、`h`、`ss` 或 `hh`
+- 第 2 列到行尾：匹配表达式
+
+操作符：
+
+- `s`：show regex
+- `h`：hide regex
+- `ss`：show literal
+- `hh`：hide literal
 
 后续可以扩展 `prefix`、`suffix`、大小写选项等。
 
@@ -70,8 +76,8 @@ show regex user=[0-9]+
 必须覆盖：
 
 - 空规则集：所有行可见。
-- 单个 `show literal`。
-- 单个 `hide literal`。
+- 单个 `ss`。
+- 单个 `hh`。
 - 多层规则：下一层只处理上一层 bit 为 `1` 的行。
 - 中间 bit array 内容正确。
 - 最终 bit array 内容正确。
