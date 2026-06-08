@@ -179,6 +179,10 @@ void test_ruleset_mutation() {
     lv::RuleSet rules;
     rules.add(lv::Rule(lv::RuleAction::Show, lv::RuleMatchType::Literal, "A"));
     rules.add(lv::Rule(lv::RuleAction::Show, lv::RuleMatchType::Literal, "B"));
+    CHECK(rules.insert(1, lv::Rule(lv::RuleAction::Show, lv::RuleMatchType::Literal, "X")));
+    CHECK(rules[1].pattern() == "X");
+    CHECK(!rules.insert(99, lv::Rule(lv::RuleAction::Show, lv::RuleMatchType::Literal, "bad")));
+    CHECK(rules.remove(1));
     CHECK(rules.move_down(0));
     CHECK(rules[0].pattern() == "B");
     CHECK(rules.move_up(1));

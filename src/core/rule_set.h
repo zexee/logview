@@ -19,6 +19,7 @@ public:
     bool save(const std::string& path, std::string* error = nullptr) const;
 
     void add(Rule rule);
+    bool insert(std::size_t index, Rule rule);
     bool replace(std::size_t index, Rule rule);
     bool remove(std::size_t index);
     bool move_up(std::size_t index);

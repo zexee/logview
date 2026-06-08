@@ -45,7 +45,7 @@ private:
     void open_log_file(const std::string& path);
     void save_filtered_file(const std::string& path);
     void begin_rule_edit();
-    void begin_rule_add();
+    void begin_rule_add(std::size_t index);
     void delete_selected_rule();
     void move_selected_rule_up();
     void move_selected_rule_down();
@@ -84,6 +84,7 @@ private:
     std::size_t log_top_line_ = 0;
     std::size_t rule_cursor_ = 0;
     std::size_t rule_top_ = 0;
+    std::size_t pending_insert_index_ = 0;
     bool editing_rule_ = false;
     bool adding_rule_ = false;
     std::uint64_t next_filter_generation_ = 1;

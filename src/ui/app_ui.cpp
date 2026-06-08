@@ -336,9 +336,16 @@ void AppUi::handle_key(int key) {
         }
         break;
     case 'a':
-        if (focus_ == Focus::Rules) {
-            begin_rule_add();
-        }
+        begin_rule_add(rules_.empty() ? 0 : rule_cursor_ + 1);
+        break;
+    case 'i':
+        begin_rule_add(rules_.empty() ? 0 : rule_cursor_);
+        break;
+    case 'A':
+        begin_rule_add(rules_.size());
+        break;
+    case 'I':
+        begin_rule_add(0);
         break;
     case 'x':
         if (focus_ == Focus::Rules) {
@@ -372,8 +379,9 @@ void AppUi::handle_editor_submit() {
     }
 
     if (adding_rule_ || rules_.empty()) {
-        rules_.add(std::move(parsed.rule));
-        rule_cursor_ = rules_.size() - 1;
+        const std::size_t insert_index = std::min(pending_insert_index_, rules_.size());
+        rules_.insert(insert_index, std::move(parsed.rule));
+        rule_cursor_ = insert_index;
     } else {
         rules_.replace(rule_cursor_, std::move(parsed.rule));
     }
@@ -508,9 +516,10 @@ void AppUi::begin_rule_edit() {
     editor_.start("", selected_rule_text());
 }
 
-void AppUi::begin_rule_add() {
+void AppUi::begin_rule_add(std::size_t index) {
     editing_rule_ = true;
     adding_rule_ = true;
+    pending_insert_index_ = std::min(index, rules_.size());
     editor_.start("", "ss ");
 }
 

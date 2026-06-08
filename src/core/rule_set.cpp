@@ -93,6 +93,14 @@ void RuleSet::add(Rule rule) {
     rules_.push_back(std::move(rule));
 }
 
+bool RuleSet::insert(std::size_t index, Rule rule) {
+    if (index > rules_.size()) {
+        return false;
+    }
+    rules_.insert(rules_.begin() + static_cast<std::ptrdiff_t>(index), std::move(rule));
+    return true;
+}
+
 bool RuleSet::replace(std::size_t index, Rule rule) {
     if (index >= rules_.size()) {
         return false;
