@@ -91,7 +91,11 @@ void AppUi::render_log() {
     if (focus_ == Focus::Log && !editor_.active()) {
         wattron(log_window_, COLOR_PAIR(1));
     }
-    mvwprintw(log_window_, 0, 0, " log ");
+    const std::string& path = file_.path();
+    const int title_width = std::min<int>(log_rect_.width, static_cast<int>(path.size()));
+    if (title_width > 0) {
+        mvwaddnstr(log_window_, 0, 0, path.c_str(), title_width);
+    }
     if (focus_ == Focus::Log && !editor_.active()) {
         wattroff(log_window_, COLOR_PAIR(1));
     }
