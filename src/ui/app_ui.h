@@ -38,6 +38,7 @@ private:
     void render_log();
     void render_rules();
     void render_editor();
+    int normalize_key(int key);
     void handle_key(int key);
     void handle_editor_submit();
     void handle_command(const std::string& command);
@@ -55,8 +56,11 @@ private:
     void join_filter_jobs();
     void wait_for_filter_jobs();
     bool line_visible(LineNumber line) const;
+    LineNumber first_visible_line() const;
+    LineNumber last_visible_line() const;
     LineNumber next_visible_line(LineNumber line) const;
     LineNumber previous_visible_line(LineNumber line) const;
+    void move_log_page(int direction);
     int line_wrap_rows(LineNumber line, int content_width) const;
     void keep_cursor_visible(int content_width, int content_height);
     int line_number_width() const;

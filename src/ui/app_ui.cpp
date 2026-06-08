@@ -31,6 +31,7 @@ int AppUi::run() {
         }
         int key = getch();
         if (key != ERR) {
+            key = normalize_key(key);
             handle_key(key);
             dirty_ = true;
         }
@@ -199,6 +200,53 @@ void AppUi::render_editor() {
     }
 }
 
+int AppUi::normalize_key(int key) {
+    if (key != 27 || editor_.active()) {
+        return key;
+    }
+
+    const int first = getch();
+    if (first == ERR) {
+        return key;
+    }
+    if (first != '[' && first != 'O') {
+        return key;
+    }
+
+    const int second = getch();
+    switch (second) {
+    case 'H':
+        return KEY_HOME;
+    case 'F':
+        return KEY_END;
+    case '5':
+        if (getch() == '~') {
+            return KEY_PPAGE;
+        }
+        break;
+    case '6':
+        if (getch() == '~') {
+            return KEY_NPAGE;
+        }
+        break;
+    case '1':
+    case '7':
+        if (getch() == '~') {
+            return KEY_HOME;
+        }
+        break;
+    case '4':
+    case '8':
+        if (getch() == '~') {
+            return KEY_END;
+        }
+        break;
+    default:
+        break;
+    }
+    return key;
+}
+
 void AppUi::handle_key(int key) {
     if (editor_.active()) {
         const LineEditorEvent event = editor_.handle_key(key);
@@ -245,6 +293,36 @@ void AppUi::handle_key(int key) {
             }
         } else if (index_.line_count() > 0) {
             log_cursor_ = next_visible_line(log_cursor_);
+        }
+        break;
+    case KEY_NPAGE:
+    case 6:
+        if (focus_ == Focus::Log) {
+            move_log_page(1);
+        }
+        break;
+    case KEY_PPAGE:
+    case 2:
+        if (focus_ == Focus::Log) {
+            move_log_page(-1);
+        }
+        break;
+    case 'g':
+    case KEY_HOME:
+    case KEY_FIND:
+    case KEY_A1:
+        if (focus_ == Focus::Log) {
+            log_cursor_ = first_visible_line();
+            log_top_line_ = log_cursor_;
+        }
+        break;
+    case 'G':
+    case KEY_END:
+    case KEY_SELECT:
+    case KEY_C1:
+        if (focus_ == Focus::Log) {
+            log_cursor_ = last_visible_line();
+            log_top_line_ = log_cursor_;
         }
         break;
     case '[':
@@ -580,6 +658,29 @@ bool AppUi::line_visible(LineNumber line) const {
     return filter_bitmap_ == nullptr || filter_bitmap_->get(line);
 }
 
+LineNumber AppUi::first_visible_line() const {
+    for (LineNumber line = 0; line < index_.line_count(); ++line) {
+        if (line_visible(line)) {
+            return line;
+        }
+    }
+    return 0;
+}
+
+LineNumber AppUi::last_visible_line() const {
+    if (index_.line_count() == 0) {
+        return 0;
+    }
+    LineNumber line = index_.line_count() - 1;
+    while (line > 0) {
+        if (line_visible(line)) {
+            return line;
+        }
+        --line;
+    }
+    return line_visible(0) ? 0 : index_.line_count() - 1;
+}
+
 LineNumber AppUi::next_visible_line(LineNumber line) const {
     if (index_.line_count() == 0) {
         return 0;
@@ -605,6 +706,21 @@ LineNumber AppUi::previous_visible_line(LineNumber line) const {
         --candidate;
     }
     return line_visible(0) ? 0 : line;
+}
+
+void AppUi::move_log_page(int direction) {
+    if (index_.line_count() == 0 || direction == 0) {
+        return;
+    }
+
+    const int steps = std::max(1, log_rect_.height - 2);
+    for (int i = 0; i < steps; ++i) {
+        const LineNumber next = direction > 0 ? next_visible_line(log_cursor_) : previous_visible_line(log_cursor_);
+        if (next == log_cursor_) {
+            break;
+        }
+        log_cursor_ = next;
+    }
 }
 
 int AppUi::line_wrap_rows(LineNumber line, int content_width) const {
