@@ -46,11 +46,13 @@ void AppUi::recreate_windows() {
     const int cols = std::max(20, screen_.cols());
     const int editor_height = 1;
     const int content_height = rows - editor_height;
-    const int rules_height = std::clamp(content_height / 3, 3, std::max(3, content_height - 3));
-    const int log_height = std::max(1, content_height - rules_height);
+    const int separator_height = content_height > 3 ? 1 : 0;
+    const int split_content_height = std::max(1, content_height - separator_height);
+    const int rules_height = std::clamp(split_content_height / 3, 2, std::max(2, split_content_height - 2));
+    const int log_height = std::max(1, split_content_height - rules_height);
 
     log_rect_ = Rect{0, 0, log_height, cols};
-    rules_rect_ = Rect{log_height, 0, rules_height, cols};
+    rules_rect_ = Rect{log_height + separator_height, 0, rules_height, cols};
     editor_rect_ = Rect{rows - 1, 0, editor_height, cols};
 
     log_window_ = newwin(log_rect_.height, log_rect_.width, log_rect_.y, log_rect_.x);
@@ -86,18 +88,21 @@ void AppUi::render() {
 
 void AppUi::render_log() {
     werase(log_window_);
-    box(log_window_, 0, 0);
     if (focus_ == Focus::Log && !editor_.active()) {
         wattron(log_window_, COLOR_PAIR(1));
     }
-    mvwprintw(log_window_, 0, 2, " log ");
+    mvwprintw(log_window_, 0, 0, " log ");
     if (focus_ == Focus::Log && !editor_.active()) {
         wattroff(log_window_, COLOR_PAIR(1));
     }
+    if (rules_rect_.y > log_rect_.y + log_rect_.height && log_rect_.width > 0) {
+        mvwhline(stdscr, log_rect_.height, 0, ACS_HLINE, log_rect_.width);
+        wnoutrefresh(stdscr);
+    }
 
-    const int content_height = std::max(0, log_rect_.height - 2);
+    const int content_height = std::max(0, log_rect_.height - 1);
     const int number_width = line_number_width();
-    const int content_width = std::max(1, log_rect_.width - number_width - 4);
+    const int content_width = std::max(1, log_rect_.width - number_width - 2);
     const std::string highlight = active_literal_highlight();
     keep_cursor_visible(content_width, content_height);
 
@@ -120,21 +125,21 @@ void AppUi::render_log() {
                 wattron(log_window_, A_REVERSE);
             }
             if (wrap == 0) {
-                mvwprintw(log_window_, row, 1, "%*zu ", number_width - 1, line_number + 1);
+                mvwprintw(log_window_, row, 0, "%*zu ", number_width - 1, line_number + 1);
             } else {
-                mvwprintw(log_window_, row, 1, "%*s ", number_width - 1, "");
+                mvwprintw(log_window_, row, 0, "%*s ", number_width - 1, "");
             }
 
             if (chunk_len > 0) {
                 render_log_chunk(row,
-                                 number_width + 1,
+                                 number_width,
                                  std::string_view(line.data() + offset, static_cast<std::size_t>(chunk_len)),
                                  highlight,
                                  selected);
             }
-            const int used = number_width + 1 + chunk_len;
-            if (used < log_rect_.width - 1) {
-                mvwprintw(log_window_, row, used, "%*s", log_rect_.width - 1 - used, "");
+            const int used = number_width + chunk_len;
+            if (used < log_rect_.width) {
+                mvwprintw(log_window_, row, used, "%*s", log_rect_.width - used, "");
             }
             if (selected) {
                 wattroff(log_window_, A_REVERSE);
@@ -146,16 +151,15 @@ void AppUi::render_log() {
 
 void AppUi::render_rules() {
     werase(rules_window_);
-    box(rules_window_, 0, 0);
     if (focus_ == Focus::Rules && !editor_.active()) {
         wattron(rules_window_, COLOR_PAIR(1));
     }
-    mvwprintw(rules_window_, 0, 2, " rules ");
+    mvwprintw(rules_window_, 0, 0, " rules ");
     if (focus_ == Focus::Rules && !editor_.active()) {
         wattroff(rules_window_, COLOR_PAIR(1));
     }
 
-    const int inner_height = std::max(0, rules_rect_.height - 2);
+    const int inner_height = std::max(0, rules_rect_.height - 1);
     keep_rule_cursor_visible();
     for (int row = 0; row < inner_height; ++row) {
         const std::size_t index = rule_top_ + static_cast<std::size_t>(row);
@@ -166,13 +170,13 @@ void AppUi::render_rules() {
             wattron(rules_window_, A_REVERSE);
         }
         const std::string text = rules_[index].serialize();
-        mvwprintw(rules_window_, row + 1, 2, "%2zu  %-*s", index + 1, rules_rect_.width - 8, text.c_str());
+        mvwprintw(rules_window_, row + 1, 0, "%2zu  %-*s", index + 1, rules_rect_.width - 6, text.c_str());
         if (index == rule_cursor_) {
             wattroff(rules_window_, A_REVERSE);
         }
     }
     if (rules_.empty()) {
-        mvwprintw(rules_window_, 1, 2, "no rules");
+        mvwprintw(rules_window_, 1, 0, "no rules");
     }
     wnoutrefresh(rules_window_);
 }
@@ -468,7 +472,7 @@ std::string AppUi::selected_rule_text() const {
 }
 
 void AppUi::keep_rule_cursor_visible() {
-    const std::size_t visible_rows = rules_rect_.height > 2 ? static_cast<std::size_t>(rules_rect_.height - 2) : 0;
+    const std::size_t visible_rows = rules_rect_.height > 1 ? static_cast<std::size_t>(rules_rect_.height - 1) : 0;
     if (visible_rows == 0 || rules_.empty()) {
         rule_top_ = 0;
         return;
