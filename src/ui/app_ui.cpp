@@ -180,7 +180,13 @@ void AppUi::render_rules() {
 void AppUi::render_editor() {
     editor_.render(editor_window_, editor_rect_.width);
     if (!editor_.active() && !status_.empty()) {
-        mvwprintw(editor_window_, 0, 8, "%s", status_.c_str());
+        const int width = std::max(1, editor_rect_.width);
+        const int max_status_width = std::max(0, width - 8);
+        const int status_width = std::min<int>(max_status_width, static_cast<int>(status_.size()));
+        const int start = std::max(0, width - status_width);
+        const std::string_view visible_status(status_.data() + status_.size() - static_cast<std::size_t>(status_width),
+                                              static_cast<std::size_t>(status_width));
+        mvwaddnstr(editor_window_, 0, start, visible_status.data(), static_cast<int>(visible_status.size()));
         wnoutrefresh(editor_window_);
     }
 }

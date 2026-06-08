@@ -6,6 +6,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Curses REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FORMW REQUIRED formw)
+pkg_check_modules(NCURSESW REQUIRED ncursesw)
 
 add_library(lv_core
     src/core/bit_array.cpp
@@ -25,8 +28,8 @@ add_library(lv_ui
     src/ui/screen.cpp
 )
 target_include_directories(lv_ui PUBLIC src)
-target_include_directories(lv_ui PRIVATE ${CURSES_INCLUDE_DIRS})
-target_link_libraries(lv_ui PUBLIC lv_core PRIVATE ${CURSES_LIBRARIES})
+target_include_directories(lv_ui PRIVATE ${CURSES_INCLUDE_DIRS} ${FORMW_INCLUDE_DIRS} ${NCURSESW_INCLUDE_DIRS})
+target_link_libraries(lv_ui PUBLIC lv_core ${FORMW_LIBRARIES} ${NCURSESW_LIBRARIES})
 target_compile_options(lv_ui PRIVATE -Wall -Wextra -Wpedantic)
 
 add_executable(lv src/main.cpp)
