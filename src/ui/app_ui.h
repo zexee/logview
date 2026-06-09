@@ -11,6 +11,7 @@
 
 #include <memory>
 #include <mutex>
+#include <regex>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -65,6 +66,20 @@ private:
     void keep_cursor_visible(int content_width, int content_height);
     int line_number_width() const;
     std::string active_literal_highlight() const;
+
+    struct HighlightMatch {
+        std::size_t start;
+        std::size_t length;
+    };
+
+    void begin_search();
+    void handle_search_submit();
+    void jump_to_next_match();
+    void jump_to_previous_match();
+    LineNumber next_search_match(LineNumber line) const;
+    LineNumber previous_search_match(LineNumber line) const;
+    void build_search_bitmap();
+    std::vector<HighlightMatch> find_line_matches(LineNumber line) const;
     void render_log_chunk(int row, int col, std::string_view chunk, const std::string& highlight, bool selected);
     static char printable_char(char ch);
 
@@ -87,6 +102,10 @@ private:
     std::size_t pending_insert_index_ = 0;
     bool editing_rule_ = false;
     bool adding_rule_ = false;
+    bool search_active_ = false;
+    std::string search_pattern_;
+    std::unique_ptr<std::regex> search_regex_;
+    BitArray search_matches_;
     std::uint64_t next_filter_generation_ = 1;
     std::uint64_t applied_filter_generation_ = 0;
 

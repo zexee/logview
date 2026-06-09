@@ -10,10 +10,9 @@ namespace lv {
 
 namespace {
 
-std::string trim(std::string text) {
+std::string ltrim(std::string text) {
     auto not_space = [](unsigned char c) { return !std::isspace(c); };
     text.erase(text.begin(), std::find_if(text.begin(), text.end(), not_space));
-    text.erase(std::find_if(text.rbegin(), text.rend(), not_space).base(), text.end());
     return text;
 }
 
@@ -57,7 +56,10 @@ bool RuleSet::load(const std::string& path, std::string* error) {
     std::size_t line_number = 0;
     while (std::getline(in, line)) {
         ++line_number;
-        const std::string clean = trim(line);
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        const std::string clean = ltrim(line);
         if (clean.empty() || clean[0] == '#') {
             continue;
         }
@@ -150,7 +152,14 @@ RuleParseResult RuleSet::parse_line(const std::string& line) {
 
     std::string pattern;
     std::getline(input, pattern);
-    pattern = trim(pattern);
+    pattern = ltrim(pattern);
+    if (pattern.size() >= 2) {
+        const char first = pattern.front();
+        const char last = pattern.back();
+        if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+            pattern = pattern.substr(1, pattern.size() - 2);
+        }
+    }
     if (pattern.empty()) {
         return {.ok = false, .error = "missing rule pattern"};
     }

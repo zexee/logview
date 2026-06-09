@@ -121,10 +121,13 @@ void AppUi::render_log() {
         const std::string_view line = index_.line(line_number);
         const int wraps = line_wrap_rows(line_number, content_width);
         const bool selected = line_number == log_cursor_;
+        const std::vector<HighlightMatch> search_matches =
+            search_regex_ ? find_line_matches(line_number) : std::vector<HighlightMatch>{};
         for (int wrap = 0; wrap < wraps && row <= content_height; ++wrap, ++row) {
             const std::size_t offset = static_cast<std::size_t>(wrap * content_width);
             const std::size_t remaining = offset < line.size() ? line.size() - offset : 0;
             const int chunk_len = static_cast<int>(std::min<std::size_t>(remaining, content_width));
+            const std::string_view chunk(line.data() + offset, static_cast<std::size_t>(chunk_len));
 
             if (selected) {
                 wattron(log_window_, A_REVERSE);
@@ -136,11 +139,7 @@ void AppUi::render_log() {
             }
 
             if (chunk_len > 0) {
-                render_log_chunk(row,
-                                 number_width,
-                                 std::string_view(line.data() + offset, static_cast<std::size_t>(chunk_len)),
-                                 highlight,
-                                 selected);
+                render_log_chunk(row, number_width, chunk, highlight, selected);
             }
             const int used = number_width + chunk_len;
             if (used < log_rect_.width) {
@@ -148,6 +147,28 @@ void AppUi::render_log() {
             }
             if (selected) {
                 wattroff(log_window_, A_REVERSE);
+            }
+
+            if (search_regex_ && !search_matches.empty()) {
+                for (const HighlightMatch& m : search_matches) {
+                    if (m.start < offset + chunk_len && m.start + m.length > offset) {
+                        const std::size_t chunk_start =
+                            m.start > offset ? m.start - offset : 0;
+                        const std::size_t chunk_end =
+                            std::min(m.start + m.length, offset + chunk_len) - offset;
+                        const std::size_t match_chunk_len = chunk_end - chunk_start;
+                        const int draw_col = number_width + static_cast<int>(chunk_start);
+                        wattron(log_window_, COLOR_PAIR(3) | A_BOLD);
+                        wmove(log_window_, row, draw_col);
+                        for (std::size_t i = 0; i < match_chunk_len; ++i) {
+                            const std::size_t chunk_idx = chunk_start + i;
+                            if (chunk_idx < chunk.size()) {
+                                waddch(log_window_, printable_char(chunk[chunk_idx]));
+                            }
+                        }
+                        wattroff(log_window_, COLOR_PAIR(3) | A_BOLD);
+                    }
+                }
             }
         }
     }
@@ -255,7 +276,12 @@ void AppUi::handle_key(int key) {
         } else if (event == LineEditorEvent::Canceled) {
             editing_rule_ = false;
             adding_rule_ = false;
-            status_ = "canceled";
+            if (search_active_) {
+                search_active_ = false;
+                status_ = "search canceled";
+            } else {
+                status_ = "canceled";
+            }
         }
         return;
     }
@@ -270,7 +296,13 @@ void AppUi::handle_key(int key) {
     case ':':
         editing_rule_ = false;
         adding_rule_ = false;
+        search_active_ = false;
         editor_.start(":", "");
+        break;
+    case '/':
+        if (focus_ == Focus::Log) {
+            begin_search();
+        }
         break;
     case 'q':
         running_ = false;
@@ -325,6 +357,16 @@ void AppUi::handle_key(int key) {
             log_top_line_ = log_cursor_;
         }
         break;
+    case 'n':
+        if (focus_ == Focus::Log && search_regex_) {
+            jump_to_next_match();
+        }
+        break;
+    case 'N':
+        if (focus_ == Focus::Log && search_regex_) {
+            jump_to_previous_match();
+        }
+        break;
     case '[':
         if (focus_ == Focus::Rules) {
             move_selected_rule_up();
@@ -348,6 +390,7 @@ void AppUi::handle_key(int key) {
         begin_rule_add(0);
         break;
     case 'x':
+    case 'd':
         if (focus_ == Focus::Rules) {
             delete_selected_rule();
         }
@@ -365,6 +408,10 @@ void AppUi::handle_key(int key) {
 
 void AppUi::handle_editor_submit() {
     const std::string text = editor_.text();
+    if (search_active_) {
+        handle_search_submit();
+        return;
+    }
     if (!editing_rule_) {
         handle_command(text);
         return;
@@ -482,6 +529,9 @@ void AppUi::open_log_file(const std::string& path) {
     index_ = std::move(index);
     active_filter_.reset();
     filter_bitmap_ = nullptr;
+    search_regex_.reset();
+    search_pattern_.clear();
+    search_matches_ = BitArray();
     log_cursor_ = 0;
     log_top_line_ = 0;
     status_ = "opened; filtering: " + path;
@@ -818,6 +868,137 @@ std::string AppUi::active_literal_highlight() const {
         }
     }
     return {};
+}
+
+void AppUi::begin_search() {
+    search_active_ = true;
+    editing_rule_ = false;
+    adding_rule_ = false;
+    editor_.start("/", "");
+}
+
+void AppUi::handle_search_submit() {
+    std::string text = editor_.text();
+    if (text.size() >= 2) {
+        const char first = text.front();
+        const char last = text.back();
+        if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+            text = text.substr(1, text.size() - 2);
+        }
+    }
+    if (text.empty()) {
+        // empty pattern: clear search
+        search_active_ = false;
+        search_pattern_.clear();
+        search_regex_.reset();
+        search_matches_ = BitArray();
+        status_.clear();
+        return;
+    }
+
+    try {
+        search_regex_ = std::make_unique<std::regex>(text);
+        search_pattern_ = text;
+    } catch (const std::regex_error& e) {
+        status_ = "invalid regex: " + text;
+        search_active_ = false;
+        search_regex_.reset();
+        search_pattern_.clear();
+        search_matches_ = BitArray();
+        return;
+    }
+
+    build_search_bitmap();
+    search_active_ = false;
+
+    const std::size_t match_count = search_matches_.count_ones();
+    status_ = "search: /" + text + "/ matched " + std::to_string(match_count) + " lines";
+
+    if (match_count > 0 && !search_matches_.get(log_cursor_)) {
+        jump_to_next_match();
+    }
+}
+
+void AppUi::build_search_bitmap() {
+    if (!search_regex_) {
+        search_matches_ = BitArray();
+        return;
+    }
+
+    search_matches_ = BitArray(index_.line_count(), false);
+    for (LineNumber line = 0; line < index_.line_count(); ++line) {
+        const std::string_view line_view = index_.line(line);
+        std::cmatch m;
+        if (std::regex_search(line_view.data(), line_view.data() + line_view.size(), m, *search_regex_)) {
+            search_matches_.set(line, true);
+        }
+    }
+}
+
+void AppUi::jump_to_next_match() {
+    if (!search_regex_ || index_.line_count() == 0) {
+        return;
+    }
+    const LineNumber next = next_search_match(log_cursor_);
+    if (next != log_cursor_) {
+        log_cursor_ = next;
+        log_top_line_ = log_cursor_;
+    }
+}
+
+void AppUi::jump_to_previous_match() {
+    if (!search_regex_ || index_.line_count() == 0) {
+        return;
+    }
+    const LineNumber prev = previous_search_match(log_cursor_);
+    if (prev != log_cursor_) {
+        log_cursor_ = prev;
+        log_top_line_ = log_cursor_;
+    }
+}
+
+LineNumber AppUi::next_search_match(LineNumber line) const {
+    if (index_.line_count() == 0) {
+        return 0;
+    }
+    for (LineNumber candidate = std::min(line + 1, index_.line_count() - 1); candidate < index_.line_count();
+         ++candidate) {
+        if (line_visible(candidate) && search_matches_.get(candidate)) {
+            return candidate;
+        }
+    }
+    return line;
+}
+
+LineNumber AppUi::previous_search_match(LineNumber line) const {
+    if (index_.line_count() == 0 || line == 0) {
+        return 0;
+    }
+    LineNumber candidate = line - 1;
+    while (candidate > 0) {
+        if (line_visible(candidate) && search_matches_.get(candidate)) {
+            return candidate;
+        }
+        --candidate;
+    }
+    if (line_visible(0) && search_matches_.get(0)) {
+        return 0;
+    }
+    return line;
+}
+
+std::vector<AppUi::HighlightMatch> AppUi::find_line_matches(LineNumber line) const {
+    std::vector<HighlightMatch> matches;
+    if (!search_regex_ || line >= index_.line_count()) {
+        return matches;
+    }
+    const std::string_view line_view = index_.line(line);
+    std::cregex_iterator it(line_view.data(), line_view.data() + line_view.size(), *search_regex_);
+    std::cregex_iterator end;
+    for (; it != end; ++it) {
+        matches.push_back({static_cast<std::size_t>(it->position()), static_cast<std::size_t>(it->length())});
+    }
+    return matches;
 }
 
 void AppUi::render_log_chunk(int row,
