@@ -10,7 +10,7 @@ Rule::Rule(RuleAction action, RuleMatchType type, std::string pattern)
         throw std::invalid_argument("rule pattern must not be empty");
     }
     if (type_ == RuleMatchType::Regex) {
-        regex_ = std::regex(pattern_, std::regex::ECMAScript | std::regex::optimize);
+        regex_ = boost::regex(pattern_, boost::regex::ECMAScript | boost::regex::optimize);
     }
 }
 
@@ -19,7 +19,7 @@ bool Rule::matches(std::string_view line) const {
     case RuleMatchType::Literal:
         return line.find(pattern_) != std::string_view::npos;
     case RuleMatchType::Regex:
-        return std::regex_search(line.begin(), line.end(), regex_);
+        return boost::regex_search(line.begin(), line.end(), regex_);
     }
     return false;
 }

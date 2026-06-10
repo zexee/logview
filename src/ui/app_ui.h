@@ -9,9 +9,9 @@
 #include "ui/line_editor.h"
 #include "ui/screen.h"
 
+#include <boost/regex.hpp>
 #include <memory>
 #include <mutex>
-#include <regex>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -80,6 +80,9 @@ private:
     LineNumber previous_search_match(LineNumber line) const;
     void build_search_bitmap();
     std::vector<HighlightMatch> find_line_matches(LineNumber line) const;
+    void poll_search_job();
+    void wait_for_search();
+    void cancel_search_job();
     void render_log_chunk(int row, int col, std::string_view chunk, const std::string& highlight, bool selected);
     static char printable_char(char ch);
 
@@ -104,7 +107,7 @@ private:
     bool adding_rule_ = false;
     bool search_active_ = false;
     std::string search_pattern_;
-    std::unique_ptr<std::regex> search_regex_;
+    std::unique_ptr<boost::regex> search_regex_;
     BitArray search_matches_;
     std::uint64_t next_filter_generation_ = 1;
     std::uint64_t applied_filter_generation_ = 0;
@@ -122,6 +125,15 @@ private:
     };
 
     std::vector<FilterJob> filter_jobs_;
+
+    struct SearchJobState {
+        std::mutex mutex;
+        bool done = false;
+        BitArray matches;
+    };
+
+    std::shared_ptr<SearchJobState> search_job_state_;
+    std::thread search_thread_;
 
     WINDOW* log_window_ = nullptr;
     WINDOW* rules_window_ = nullptr;

@@ -16,6 +16,7 @@ AppUi::AppUi(MMapFile file, LineIndex index, RuleSet rules, std::string rule_pat
 
 AppUi::~AppUi() {
     join_filter_jobs();
+    cancel_search_job();
 }
 
 int AppUi::run() {
@@ -25,6 +26,7 @@ int AppUi::run() {
         if (poll_filter_jobs()) {
             dirty_ = true;
         }
+        poll_search_job();
         if (dirty_) {
             render();
             dirty_ = false;
@@ -512,6 +514,7 @@ void AppUi::handle_command(const std::string& command) {
 
 void AppUi::open_log_file(const std::string& path) {
     join_filter_jobs();
+    cancel_search_job();
 
     MMapFile file;
     if (!file.open(path)) {
@@ -887,7 +890,7 @@ void AppUi::handle_search_submit() {
         }
     }
     if (text.empty()) {
-        // empty pattern: clear search
+        cancel_search_job();
         search_active_ = false;
         search_pattern_.clear();
         search_regex_.reset();
@@ -897,9 +900,9 @@ void AppUi::handle_search_submit() {
     }
 
     try {
-        search_regex_ = std::make_unique<std::regex>(text);
+        search_regex_ = std::make_unique<boost::regex>(text);
         search_pattern_ = text;
-    } catch (const std::regex_error& e) {
+    } catch (const boost::regex_error& e) {
         status_ = "invalid regex: " + text;
         search_active_ = false;
         search_regex_.reset();
@@ -908,15 +911,33 @@ void AppUi::handle_search_submit() {
         return;
     }
 
-    build_search_bitmap();
+    cancel_search_job();
     search_active_ = false;
+    search_matches_ = BitArray(index_.line_count(), false);
 
-    const std::size_t match_count = search_matches_.count_ones();
-    status_ = "search: /" + text + "/ matched " + std::to_string(match_count) + " lines";
+    auto state = std::make_shared<SearchJobState>();
+    state->done = false;
+    state->matches = BitArray(index_.line_count(), false);
+    search_job_state_ = state;
 
-    if (match_count > 0 && !search_matches_.get(log_cursor_)) {
-        jump_to_next_match();
-    }
+    LineIndex index = index_;
+    boost::regex regex = *search_regex_;
+
+    search_thread_ = std::thread([state, index = std::move(index), regex = std::move(regex)]() mutable {
+        BitArray matches(index.line_count(), false);
+        for (LineNumber line = 0; line < index.line_count(); ++line) {
+            const std::string_view line_view = index.line(line);
+            boost::cmatch m;
+            if (boost::regex_search(line_view.data(), line_view.data() + line_view.size(), m, regex)) {
+                matches.set(line, true);
+            }
+        }
+        std::lock_guard<std::mutex> lock(state->mutex);
+        state->matches = std::move(matches);
+        state->done = true;
+    });
+
+    status_ = "searching...";
 }
 
 void AppUi::build_search_bitmap() {
@@ -928,14 +949,67 @@ void AppUi::build_search_bitmap() {
     search_matches_ = BitArray(index_.line_count(), false);
     for (LineNumber line = 0; line < index_.line_count(); ++line) {
         const std::string_view line_view = index_.line(line);
-        std::cmatch m;
-        if (std::regex_search(line_view.data(), line_view.data() + line_view.size(), m, *search_regex_)) {
+        boost::cmatch m;
+        if (boost::regex_search(line_view.data(), line_view.data() + line_view.size(), m, *search_regex_)) {
             search_matches_.set(line, true);
         }
     }
 }
 
+void AppUi::poll_search_job() {
+    if (!search_job_state_) {
+        return;
+    }
+
+    bool done = false;
+    {
+        std::lock_guard<std::mutex> lock(search_job_state_->mutex);
+        done = search_job_state_->done;
+    }
+
+    if (!done) {
+        return;
+    }
+
+    if (search_thread_.joinable()) {
+        search_thread_.join();
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(search_job_state_->mutex);
+        search_matches_ = std::move(search_job_state_->matches);
+    }
+
+    search_job_state_.reset();
+
+    const std::size_t match_count = search_matches_.count_ones();
+    status_ = "search: /" + search_pattern_ + "/ matched " + std::to_string(match_count) + " lines";
+
+    if (match_count > 0 && !search_matches_.get(log_cursor_)) {
+        jump_to_next_match();
+    }
+    dirty_ = true;
+}
+
+void AppUi::wait_for_search() {
+    if (!search_job_state_) {
+        return;
+    }
+    if (search_thread_.joinable()) {
+        search_thread_.join();
+    }
+    poll_search_job();
+}
+
+void AppUi::cancel_search_job() {
+    if (search_thread_.joinable()) {
+        search_thread_.join();
+    }
+    search_job_state_.reset();
+}
+
 void AppUi::jump_to_next_match() {
+    wait_for_search();
     if (!search_regex_ || index_.line_count() == 0) {
         return;
     }
@@ -947,6 +1021,7 @@ void AppUi::jump_to_next_match() {
 }
 
 void AppUi::jump_to_previous_match() {
+    wait_for_search();
     if (!search_regex_ || index_.line_count() == 0) {
         return;
     }
@@ -993,8 +1068,8 @@ std::vector<AppUi::HighlightMatch> AppUi::find_line_matches(LineNumber line) con
         return matches;
     }
     const std::string_view line_view = index_.line(line);
-    std::cregex_iterator it(line_view.data(), line_view.data() + line_view.size(), *search_regex_);
-    std::cregex_iterator end;
+    boost::cregex_iterator it(line_view.data(), line_view.data() + line_view.size(), *search_regex_);
+    boost::cregex_iterator end;
     for (; it != end; ++it) {
         matches.push_back({static_cast<std::size_t>(it->position()), static_cast<std::size_t>(it->length())});
     }

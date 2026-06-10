@@ -1,6 +1,6 @@
 #pragma once
 
-#include <regex>
+#include <boost/regex.hpp>
 #include <string>
 #include <string_view>
 
@@ -32,7 +32,7 @@ private:
     RuleAction action_;
     RuleMatchType type_;
     std::string pattern_;
-    std::regex regex_;
+    boost::regex regex_;
 };
 
 const char* to_string(RuleAction action);
