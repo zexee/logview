@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <string_view>
@@ -510,6 +511,21 @@ void AppUi::handle_editor_submit() {
 }
 
 void AppUi::handle_command(const std::string& command) {
+    auto expand_path = [](std::string path) -> std::string {
+        if (!path.empty() && path[0] == '~') {
+            const char* home = std::getenv("HOME");
+            if (home != nullptr) {
+                if (path.size() == 1) {
+                    return std::string(home);
+                }
+                if (path[1] == '/') {
+                    return std::string(home) + path.substr(1);
+                }
+            }
+        }
+        return path;
+    };
+
     std::istringstream input(command);
     std::string name;
     input >> name;
@@ -518,13 +534,14 @@ void AppUi::handle_command(const std::string& command) {
         running_ = false;
         return;
     }
-    if (name == "rules") {
+    if (name == "r" || name == "rules") {
         std::string path;
         input >> path;
         if (path.empty()) {
-            status_ = "usage: :rules <rule_file>";
+            status_ = "usage: :r <rule_file>";
             return;
         }
+        path = expand_path(path);
         std::string error;
         RuleSet loaded;
         if (!loaded.load(path, &error)) {
@@ -541,14 +558,16 @@ void AppUi::handle_command(const std::string& command) {
         start_filter_job(0);
         return;
     }
-    if (name == "write-rules") {
+    if (name == "wr" || name == "write-rules") {
         std::string path;
         input >> path;
-        if (path.empty()) {
+        if (!path.empty()) {
+            path = expand_path(path);
+        } else {
             path = rule_path_;
         }
         if (path.empty()) {
-            status_ = "usage: :write-rules <rule_file>";
+            status_ = "usage: :wr <rule_file>";
             return;
         }
         std::string error;
@@ -560,23 +579,28 @@ void AppUi::handle_command(const std::string& command) {
         status_ = "rules written: " + path;
         return;
     }
-    if (name == "save-filtered") {
+    if (name == "w" || name == "write" || name == "save-filtered") {
         std::string path;
         input >> path;
         if (path.empty()) {
-            status_ = "usage: :save-filtered <output_file>";
+            status_ = "usage: :w <output_file>";
             return;
         }
+        path = expand_path(path);
         save_filtered_file(path);
         return;
     }
-    if (name == "open") {
+    if (name == "o" || name == "open") {
         std::string path;
         input >> path;
         if (path.empty()) {
-            status_ = "usage: :open <log_file>";
+            path = file_.path();
+        }
+        if (path.empty()) {
+            status_ = "no file to reload";
             return;
         }
+        path = expand_path(path);
         open_log_file(path);
         return;
     }
@@ -613,6 +637,11 @@ void AppUi::open_log_file(const std::string& path) {
 }
 
 void AppUi::save_filtered_file(const std::string& path) {
+    if (path == file_.path()) {
+        status_ = "cannot overwrite source file: " + path;
+        return;
+    }
+
     wait_for_filter_jobs();
 
     std::ofstream out(path, std::ios::binary);
