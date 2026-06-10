@@ -49,9 +49,11 @@ void AppUi::recreate_windows() {
     const int cols = std::max(20, screen_.cols());
     const int editor_height = 1;
     const int content_height = rows - editor_height;
-    const int separator_height = content_height > 3 ? 1 : 0;
+    const int separator_height = (content_height > 3 && rules_visible_) ? 1 : 0;
     const int split_content_height = std::max(1, content_height - separator_height);
-    const int rules_height = std::clamp(split_content_height / 3, 2, std::max(2, split_content_height - 2));
+    const int rules_height = rules_visible_
+                                 ? std::clamp(split_content_height / 3, 2, std::max(2, split_content_height - 2))
+                                 : 0;
     const int log_height = std::max(1, split_content_height - rules_height);
 
     log_rect_ = Rect{0, 0, log_height, cols};
@@ -59,11 +61,15 @@ void AppUi::recreate_windows() {
     editor_rect_ = Rect{rows - 1, 0, editor_height, cols};
 
     log_window_ = newwin(log_rect_.height, log_rect_.width, log_rect_.y, log_rect_.x);
-    rules_window_ = newwin(rules_rect_.height, rules_rect_.width, rules_rect_.y, rules_rect_.x);
+    if (rules_visible_) {
+        rules_window_ = newwin(rules_rect_.height, rules_rect_.width, rules_rect_.y, rules_rect_.x);
+    }
     editor_window_ = newwin(editor_rect_.height, editor_rect_.width, editor_rect_.y, editor_rect_.x);
 
     keypad(log_window_, TRUE);
-    keypad(rules_window_, TRUE);
+    if (rules_visible_) {
+        keypad(rules_window_, TRUE);
+    }
     keypad(editor_window_, TRUE);
 }
 
@@ -84,7 +90,9 @@ void AppUi::destroy_windows() {
 
 void AppUi::render() {
     render_log();
-    render_rules();
+    if (rules_visible_) {
+        render_rules();
+    }
     render_editor();
     doupdate();
 }
@@ -292,7 +300,29 @@ void AppUi::handle_key(int key) {
     case KEY_RESIZE:
         recreate_windows();
         break;
+    case ' ':
+        if (focus_ == Focus::Log) {
+            rules_visible_ = !rules_visible_;
+            if (!rules_visible_) {
+                focus_ = Focus::Log;
+            }
+        } else if (focus_ == Focus::Rules) {
+            rules_visible_ = false;
+            focus_ = Focus::Log;
+        }
+        recreate_windows();
+        break;
+    case 27:
+        if (focus_ == Focus::Rules) {
+            rules_visible_ = false;
+            focus_ = Focus::Log;
+            recreate_windows();
+        }
+        break;
     case '\t':
+        if (!rules_visible_) {
+            break;
+        }
         focus_ = focus_ == Focus::Log ? Focus::Rules : Focus::Log;
         break;
     case ':':
