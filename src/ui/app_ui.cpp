@@ -1043,6 +1043,37 @@ void AppUi::keep_cursor_visible(int content_width, int content_height) {
             rows_to_cursor += line_wrap_rows(line, content_width);
         }
     }
+
+    constexpr int kScrollOff = 5;
+    const int scrolloff = std::min(kScrollOff, std::max(0, content_height / 2 - 1));
+
+    // Scroll down if cursor is too close to the bottom
+    if (rows_to_cursor > content_height - scrolloff) {
+        int target = content_height - scrolloff - 1;
+        if (target < 0) target = 0;
+        while (rows_to_cursor > target && log_top_line_ < log_cursor_) {
+            log_top_line_ = next_visible_line(log_top_line_);
+            rows_to_cursor = 0;
+            for (LineNumber line = log_top_line_; line < index_.line_count() && rows_to_cursor <= content_height; ++line) {
+                if (!line_visible(line)) continue;
+                if (line == log_cursor_) {
+                    rows_to_cursor += line_wrap_rows(line, content_width);
+                    break;
+                }
+                rows_to_cursor += line_wrap_rows(line, content_width);
+            }
+        }
+    }
+
+    // Scroll up if cursor is too close to the top (but not at file start)
+    if (rows_to_cursor < scrolloff) {
+        int needed = scrolloff - rows_to_cursor;
+        for (int i = 0; i < needed; ++i) {
+            LineNumber prev = previous_visible_line(log_top_line_);
+            if (prev == log_top_line_) break;
+            log_top_line_ = prev;
+        }
+    }
 }
 
 int AppUi::line_number_width() const {
