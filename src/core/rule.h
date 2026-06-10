@@ -30,6 +30,8 @@ public:
 
     RuleAction action() const { return action_; }
     const std::vector<RuleSegment>& segments() const { return segments_; }
+    bool enabled() const { return enabled_; }
+    void set_enabled(bool enabled) { enabled_ = enabled; }
 
     bool matches(std::string_view line) const;
     bool passes(std::string_view line) const;
@@ -38,6 +40,7 @@ public:
 private:
     RuleAction action_;
     std::vector<RuleSegment> segments_;
+    bool enabled_ = true;
 };
 
 const char* to_string(RuleAction action);

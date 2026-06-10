@@ -29,6 +29,7 @@ public:
     std::size_t size() const { return rules_.size(); }
     bool empty() const { return rules_.empty(); }
     const Rule& operator[](std::size_t index) const { return rules_[index]; }
+    Rule& operator[](std::size_t index) { return rules_[index]; }
     const std::vector<Rule>& rules() const { return rules_; }
 
     static RuleParseResult parse_line(const std::string& line);

@@ -450,6 +450,14 @@ void AppUi::handle_key(int key) {
             delete_selected_rule();
         }
         break;
+    case '-':
+        if (focus_ == Focus::Rules && !rules_.empty()) {
+            Rule& rule = rules_[rule_cursor_];
+            rule.set_enabled(!rule.enabled());
+            status_ = rule.enabled() ? "rule enabled" : "rule disabled";
+            start_filter_job(rule_cursor_);
+        }
+        break;
     case 10:
     case KEY_ENTER:
         if (focus_ == Focus::Rules) {
@@ -483,14 +491,23 @@ void AppUi::handle_editor_submit() {
     if (adding_rule_ || rules_.empty()) {
         const std::size_t insert_index = std::min(pending_insert_index_, rules_.size());
         rules_.insert(insert_index, std::move(parsed.rule));
+        if (active_filter_) {
+            active_filter_->insert_layer(insert_index);
+        }
         rule_cursor_ = insert_index;
+        status_ = "rule updated; filtering";
+        editing_rule_ = false;
+        adding_rule_ = false;
+        start_filter_job(insert_index);
+        return;
     } else {
         rules_.replace(rule_cursor_, std::move(parsed.rule));
+        status_ = "rule updated; filtering";
+        editing_rule_ = false;
+        adding_rule_ = false;
+        start_filter_job(rule_cursor_);
+        return;
     }
-    status_ = "rule updated; filtering";
-    editing_rule_ = false;
-    adding_rule_ = false;
-    start_filter_job();
 }
 
 void AppUi::handle_command(const std::string& command) {
@@ -520,7 +537,9 @@ void AppUi::handle_command(const std::string& command) {
         rule_cursor_ = 0;
         rule_top_ = 0;
         status_ = "rules loaded; filtering";
-        start_filter_job();
+        active_filter_.reset();
+        filter_bitmap_ = nullptr;
+        start_filter_job(0);
         return;
     }
     if (name == "write-rules") {
@@ -634,7 +653,11 @@ void AppUi::delete_selected_rule() {
         status_ = "no rule to delete";
         return;
     }
-    rules_.remove(rule_cursor_);
+    const std::size_t deleted_idx = rule_cursor_;
+    rules_.remove(deleted_idx);
+    if (active_filter_) {
+        active_filter_->remove_layer(deleted_idx);
+    }
     if (rule_cursor_ >= rules_.size() && rule_cursor_ > 0) {
         --rule_cursor_;
     }
@@ -642,22 +665,30 @@ void AppUi::delete_selected_rule() {
         rule_top_ = rule_cursor_;
     }
     status_ = "rule deleted; filtering";
-    start_filter_job();
+    start_filter_job(kMergeOnly);
 }
 
 void AppUi::move_selected_rule_up() {
+    const std::size_t old_idx = rule_cursor_;
     if (rules_.move_up(rule_cursor_)) {
         --rule_cursor_;
+        if (active_filter_) {
+            std::swap(active_filter_->layer(old_idx), active_filter_->layer(rule_cursor_));
+        }
         status_ = "rule moved; filtering";
-        start_filter_job();
+        start_filter_job(rule_cursor_);
     }
 }
 
 void AppUi::move_selected_rule_down() {
+    const std::size_t old_idx = rule_cursor_;
     if (rules_.move_down(rule_cursor_)) {
         ++rule_cursor_;
+        if (active_filter_) {
+            std::swap(active_filter_->layer(old_idx), active_filter_->layer(rule_cursor_));
+        }
         status_ = "rule moved; filtering";
-        start_filter_job();
+        start_filter_job(old_idx);
     }
 }
 
@@ -684,17 +715,35 @@ void AppUi::keep_rule_cursor_visible() {
     }
 }
 
-void AppUi::start_filter_job() {
+void AppUi::start_filter_job(std::size_t recompute_from) {
     auto state = std::make_shared<FilterJobState>();
     state->generation = next_filter_generation_++;
     RuleSet rules = rules_;
     LineIndex index = index_;
 
-    std::thread thread([state, rules = std::move(rules), index = std::move(index)]() mutable {
+    std::unique_ptr<FilterResult> base;
+    if (recompute_from > 0 && recompute_from != kMergeOnly && active_filter_) {
+        base = std::make_unique<FilterResult>(*active_filter_);
+    } else if (recompute_from == kMergeOnly && active_filter_) {
+        base = std::make_unique<FilterResult>(*active_filter_);
+    }
+
+    std::thread thread([state, rules = std::move(rules), index = std::move(index),
+                        base = std::move(base), recompute_from]() mutable {
         FilterEngine engine;
-        FilterResult result = engine.run(index, rules);
-        std::lock_guard<std::mutex> lock(state->mutex);
-        state->result = std::move(result);
+        if (recompute_from == 0) {
+            FilterResult result = engine.run(index, rules);
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->result = std::move(result);
+        } else if (recompute_from == kMergeOnly) {
+            engine.merge_final(*base, rules);
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->result = std::move(*base);
+        } else {
+            engine.recompute_from(*base, index, rules, recompute_from);
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->result = std::move(*base);
+        }
         state->done = true;
     });
 

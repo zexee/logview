@@ -52,7 +52,8 @@ private:
     void move_selected_rule_down();
     std::string selected_rule_text() const;
     void keep_rule_cursor_visible();
-    void start_filter_job();
+    void start_filter_job(std::size_t recompute_from = 0);
+    static constexpr std::size_t kMergeOnly = static_cast<std::size_t>(-1);
     bool poll_filter_jobs();
     void join_filter_jobs();
     void wait_for_filter_jobs();

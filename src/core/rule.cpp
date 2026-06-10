@@ -43,11 +43,11 @@ bool Rule::passes(std::string_view line) const {
 }
 
 std::string Rule::serialize() const {
-    std::string result;
+    std::string result = enabled_ ? "" : "-";
     if (action_ == RuleAction::Show) {
-        result = "s ";
+        result += "s ";
     } else {
-        result = "h ";
+        result += "h ";
     }
     for (std::size_t i = 0; i < segments_.size(); ++i) {
         if (i > 0) {

@@ -20,4 +20,20 @@ std::size_t FilterResult::bitmap_bytes() const {
     return bytes;
 }
 
+void FilterResult::remove_layer(std::size_t index) {
+    if (index < layers_.size()) {
+        layers_.erase(layers_.begin() + static_cast<std::ptrdiff_t>(index));
+    }
+}
+
+void FilterResult::insert_layer(std::size_t index) {
+    if (index <= layers_.size()) {
+        layers_.insert(layers_.begin() + static_cast<std::ptrdiff_t>(index), BitArray(line_count_, false));
+    }
+}
+
+void FilterResult::add_layer() {
+    layers_.emplace_back(line_count_, false);
+}
+
 } // namespace lv

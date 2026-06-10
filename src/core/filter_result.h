@@ -26,6 +26,10 @@ public:
     const BitArray& final() const { return final_; }
     BitArray& final() { return final_; }
 
+    void remove_layer(std::size_t index);
+    void insert_layer(std::size_t index);
+    void add_layer();
+
 private:
     LineNumber line_count_ = 0;
     std::vector<BitArray> layers_;

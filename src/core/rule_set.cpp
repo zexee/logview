@@ -132,6 +132,12 @@ RuleParseResult RuleSet::parse_line(const std::string& line) {
     std::string operator_token;
     input >> operator_token;
 
+    bool enabled = true;
+    if (operator_token.size() > 1 && operator_token[0] == '-') {
+        enabled = false;
+        operator_token = operator_token.substr(1);
+    }
+
     RuleAction action = RuleAction::Show;
     if (!parse_rule_operator(operator_token, &action)) {
         return {.ok = false, .error = "expected rule operator 's' or 'h'"};
@@ -169,6 +175,13 @@ RuleParseResult RuleSet::parse_line(const std::string& line) {
         }
 
         RuleSegment seg;
+        if (seg_text.size() >= 2) {
+            const char sf = seg_text.front();
+            const char sl = seg_text.back();
+            if ((sf == '"' && sl == '"') || (sf == '\'' && sl == '\'')) {
+                seg_text = seg_text.substr(1, seg_text.size() - 2);
+            }
+        }
         if (seg_text.size() >= 2 && seg_text.front() == '/' && seg_text.back() == '/') {
             seg.type = RuleMatchType::Regex;
             seg.pattern = seg_text.substr(1, seg_text.size() - 2);
@@ -185,7 +198,9 @@ RuleParseResult RuleSet::parse_line(const std::string& line) {
     }
 
     try {
-        return {.ok = true, .rule = Rule(action, std::move(segments)), .error = ""};
+        auto rule = Rule(action, std::move(segments));
+        rule.set_enabled(enabled);
+        return {.ok = true, .rule = std::move(rule), .error = ""};
     } catch (const std::exception& ex) {
         return {.ok = false, .error = ex.what()};
     }
