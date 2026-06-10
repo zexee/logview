@@ -139,13 +139,18 @@ void AppUi::render_log() {
             const int chunk_len = static_cast<int>(std::min<std::size_t>(remaining, content_width));
             const std::string_view chunk(line.data() + offset, static_cast<std::size_t>(chunk_len));
 
+            if (wrap == 0) {
+                wattron(log_window_, COLOR_PAIR(4));
+                mvwprintw(log_window_, row, 0, "%*zu ", number_width - 1, line_number + 1);
+                wattroff(log_window_, COLOR_PAIR(4));
+            } else {
+                wattron(log_window_, COLOR_PAIR(4));
+                mvwprintw(log_window_, row, 0, "%*s ", number_width - 1, "");
+                wattroff(log_window_, COLOR_PAIR(4));
+            }
+
             if (selected) {
                 wattron(log_window_, A_REVERSE);
-            }
-            if (wrap == 0) {
-                mvwprintw(log_window_, row, 0, "%*zu ", number_width - 1, line_number + 1);
-            } else {
-                mvwprintw(log_window_, row, 0, "%*s ", number_width - 1, "");
             }
 
             if (chunk_len > 0) {
