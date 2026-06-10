@@ -8,6 +8,7 @@ Screen::Screen() {
     noecho();
     keypad(stdscr, TRUE);
     timeout(50);
+    set_escdelay(0);
     curs_set(1);
     start_color();
     use_default_colors();

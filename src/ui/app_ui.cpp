@@ -311,10 +311,9 @@ void AppUi::handle_key(int key) {
             adding_rule_ = false;
             if (search_active_) {
                 search_active_ = false;
-                status_ = "search canceled";
-            } else {
-                status_ = "canceled";
             }
+            render();
+            dirty_ = false;
         }
         return;
     }
