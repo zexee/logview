@@ -9,7 +9,7 @@ namespace lv {
 
 struct RuleParseResult {
     bool ok = false;
-    Rule rule = Rule(RuleAction::Show, RuleMatchType::Literal, "__placeholder__");
+    Rule rule = Rule(RuleAction::Show, {RuleSegment{RuleMatchType::Literal, "__placeholder__", {}}});
     std::string error;
 };
 

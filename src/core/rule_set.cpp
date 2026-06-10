@@ -16,15 +16,13 @@ std::string ltrim(std::string text) {
     return text;
 }
 
-bool parse_rule_operator(const std::string& token, RuleAction* action, RuleMatchType* type) {
+bool parse_rule_operator(const std::string& token, RuleAction* action) {
     if (token == "s") {
         *action = RuleAction::Show;
-        *type = RuleMatchType::Literal;
         return true;
     }
     if (token == "h") {
         *action = RuleAction::Hide;
-        *type = RuleMatchType::Literal;
         return true;
     }
     return false;
@@ -135,31 +133,59 @@ RuleParseResult RuleSet::parse_line(const std::string& line) {
     input >> operator_token;
 
     RuleAction action = RuleAction::Show;
-    RuleMatchType type = RuleMatchType::Literal;
-    if (!parse_rule_operator(operator_token, &action, &type)) {
+    if (!parse_rule_operator(operator_token, &action)) {
         return {.ok = false, .error = "expected rule operator 's' or 'h'"};
     }
 
-    std::string pattern;
-    std::getline(input, pattern);
-    pattern = ltrim(pattern);
-    if (pattern.size() >= 2) {
-        const char first = pattern.front();
-        const char last = pattern.back();
-        if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
-            pattern = pattern.substr(1, pattern.size() - 2);
-        }
-    }
-    if (pattern.size() >= 2 && pattern.front() == '/' && pattern.back() == '/') {
-        type = RuleMatchType::Regex;
-        pattern = pattern.substr(1, pattern.size() - 2);
-    }
-    if (pattern.empty()) {
+    std::string raw;
+    std::getline(input, raw);
+    raw = ltrim(raw);
+    if (raw.empty()) {
         return {.ok = false, .error = "missing rule pattern"};
     }
 
+    if (raw.size() >= 2) {
+        const char first = raw.front();
+        const char last = raw.back();
+        if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+            raw = raw.substr(1, raw.size() - 2);
+        }
+    }
+    if (!raw.empty() && raw.back() == '|') {
+        return {.ok = false, .error = "trailing '|' in rule pattern"};
+    }
+    if (!raw.empty() && raw.front() == '|') {
+        return {.ok = false, .error = "leading '|' in rule pattern"};
+    }
+
+    std::vector<RuleSegment> segments;
+    std::size_t pos = 0;
+    while (pos < raw.size()) {
+        std::size_t bar = raw.find('|', pos);
+        std::string seg_text = raw.substr(pos, bar - pos);
+        seg_text = ltrim(seg_text);
+        if (seg_text.empty()) {
+            return {.ok = false, .error = "empty segment in rule pattern"};
+        }
+
+        RuleSegment seg;
+        if (seg_text.size() >= 2 && seg_text.front() == '/' && seg_text.back() == '/') {
+            seg.type = RuleMatchType::Regex;
+            seg.pattern = seg_text.substr(1, seg_text.size() - 2);
+        } else {
+            seg.type = RuleMatchType::Literal;
+            seg.pattern = seg_text;
+        }
+        segments.push_back(std::move(seg));
+
+        if (bar == std::string::npos) {
+            break;
+        }
+        pos = bar + 1;
+    }
+
     try {
-        return {.ok = true, .rule = Rule(action, type, pattern), .error = ""};
+        return {.ok = true, .rule = Rule(action, std::move(segments)), .error = ""};
     } catch (const std::exception& ex) {
         return {.ok = false, .error = ex.what()};
     }

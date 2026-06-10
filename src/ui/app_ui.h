@@ -94,7 +94,7 @@ private:
     const BitArray* filter_bitmap_ = nullptr;
     std::unique_ptr<FilterResult> active_filter_;
     Focus focus_ = Focus::Log;
-    bool rules_visible_ = true;
+    bool rules_visible_ = false;
     LineEditor editor_;
     bool running_ = true;
     bool dirty_ = true;

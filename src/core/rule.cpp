@@ -4,22 +4,35 @@
 
 namespace lv {
 
-Rule::Rule(RuleAction action, RuleMatchType type, std::string pattern)
-    : action_(action), type_(type), pattern_(std::move(pattern)), regex_() {
-    if (pattern_.empty()) {
-        throw std::invalid_argument("rule pattern must not be empty");
+Rule::Rule(RuleAction action, std::vector<RuleSegment> segments)
+    : action_(action), segments_(std::move(segments)) {
+    if (segments_.empty()) {
+        throw std::invalid_argument("rule must have at least one segment");
     }
-    if (type_ == RuleMatchType::Regex) {
-        regex_ = boost::regex(pattern_, boost::regex::ECMAScript | boost::regex::optimize);
+    for (RuleSegment& seg : segments_) {
+        if (seg.pattern.empty()) {
+            throw std::invalid_argument("rule segment pattern must not be empty");
+        }
+        if (seg.type == RuleMatchType::Regex) {
+            seg.regex = boost::regex(seg.pattern, boost::regex::ECMAScript | boost::regex::optimize);
+        }
     }
 }
 
 bool Rule::matches(std::string_view line) const {
-    switch (type_) {
-    case RuleMatchType::Literal:
-        return line.find(pattern_) != std::string_view::npos;
-    case RuleMatchType::Regex:
-        return boost::regex_search(line.begin(), line.end(), regex_);
+    for (const RuleSegment& seg : segments_) {
+        switch (seg.type) {
+        case RuleMatchType::Literal:
+            if (line.find(seg.pattern) != std::string_view::npos) {
+                return true;
+            }
+            break;
+        case RuleMatchType::Regex:
+            if (seg.regex && boost::regex_search(line.begin(), line.end(), *seg.regex)) {
+                return true;
+            }
+            break;
+        }
     }
     return false;
 }
@@ -30,16 +43,24 @@ bool Rule::passes(std::string_view line) const {
 }
 
 std::string Rule::serialize() const {
-    if (action_ == RuleAction::Show && type_ == RuleMatchType::Regex) {
-        return "s /" + pattern_ + "/";
+    std::string result;
+    if (action_ == RuleAction::Show) {
+        result = "s ";
+    } else {
+        result = "h ";
     }
-    if (action_ == RuleAction::Hide && type_ == RuleMatchType::Regex) {
-        return "h /" + pattern_ + "/";
+    for (std::size_t i = 0; i < segments_.size(); ++i) {
+        if (i > 0) {
+            result += "|";
+        }
+        const RuleSegment& seg = segments_[i];
+        if (seg.type == RuleMatchType::Regex) {
+            result += "/" + seg.pattern + "/";
+        } else {
+            result += seg.pattern;
+        }
     }
-    if (action_ == RuleAction::Show && type_ == RuleMatchType::Literal) {
-        return "s " + pattern_;
-    }
-    return "h " + pattern_;
+    return result;
 }
 
 const char* to_string(RuleAction action) {

@@ -145,10 +145,39 @@ void test_parse_rule() {
     lv::RuleParseResult parsed = lv::RuleSet::parse_line("s ERROR");
     CHECK(parsed.ok);
     CHECK(parsed.rule.action() == lv::RuleAction::Show);
-    CHECK(parsed.rule.type() == lv::RuleMatchType::Literal);
-    CHECK(parsed.rule.pattern() == "ERROR");
+    CHECK_EQ(parsed.rule.segments().size(), 1);
+    CHECK(parsed.rule.segments()[0].type == lv::RuleMatchType::Literal);
+    CHECK(parsed.rule.segments()[0].pattern == "ERROR");
     CHECK(parsed.rule.passes("one ERROR line"));
     CHECK(!parsed.rule.passes("one INFO line"));
+}
+
+void test_parse_rule_regex() {
+    lv::RuleParseResult parsed = lv::RuleSet::parse_line("s /error/");
+    CHECK(parsed.ok);
+    CHECK_EQ(parsed.rule.segments().size(), 1);
+    CHECK(parsed.rule.segments()[0].type == lv::RuleMatchType::Regex);
+    CHECK(parsed.rule.segments()[0].pattern == "error");
+}
+
+void test_parse_rule_or() {
+    lv::RuleParseResult parsed = lv::RuleSet::parse_line("s A|B|C");
+    CHECK(parsed.ok);
+    CHECK_EQ(parsed.rule.segments().size(), 3);
+    CHECK(parsed.rule.segments()[0].type == lv::RuleMatchType::Literal);
+    CHECK(parsed.rule.segments()[0].pattern == "A");
+    CHECK(parsed.rule.segments()[1].pattern == "B");
+    CHECK(parsed.rule.segments()[2].pattern == "C");
+}
+
+void test_parse_rule_mixed() {
+    lv::RuleParseResult parsed = lv::RuleSet::parse_line("s /[0-9]/|A");
+    CHECK(parsed.ok);
+    CHECK_EQ(parsed.rule.segments().size(), 2);
+    CHECK(parsed.rule.segments()[0].type == lv::RuleMatchType::Regex);
+    CHECK(parsed.rule.segments()[0].pattern == "[0-9]");
+    CHECK(parsed.rule.segments()[1].type == lv::RuleMatchType::Literal);
+    CHECK(parsed.rule.segments()[1].pattern == "A");
 }
 
 void test_parse_invalid_rule() {
@@ -156,12 +185,13 @@ void test_parse_invalid_rule() {
     CHECK(!lv::RuleSet::parse_line("keep ERROR").ok);
     CHECK(!lv::RuleSet::parse_line("s").ok);
     CHECK(!lv::RuleSet::parse_line("s /[/").ok);
+    CHECK(!lv::RuleSet::parse_line("s A|").ok);
 }
 
 void test_ruleset_save_load() {
     lv::RuleSet rules;
-    rules.add(lv::Rule(lv::RuleAction::Show, lv::RuleMatchType::Literal, "ERROR"));
-    rules.add(lv::Rule(lv::RuleAction::Hide, lv::RuleMatchType::Regex, "DEBUG|TRACE"));
+    rules.add(lv::Rule(lv::RuleAction::Show, {{lv::RuleMatchType::Literal, "ERROR"}}));
+    rules.add(lv::Rule(lv::RuleAction::Hide, {{lv::RuleMatchType::Regex, "DEBUG|TRACE"}}));
 
     std::string path = temp_path("lv_rules");
     std::string error;
@@ -177,17 +207,17 @@ void test_ruleset_save_load() {
 
 void test_ruleset_mutation() {
     lv::RuleSet rules;
-    rules.add(lv::Rule(lv::RuleAction::Show, lv::RuleMatchType::Literal, "A"));
-    rules.add(lv::Rule(lv::RuleAction::Show, lv::RuleMatchType::Literal, "B"));
-    CHECK(rules.insert(1, lv::Rule(lv::RuleAction::Show, lv::RuleMatchType::Literal, "X")));
-    CHECK(rules[1].pattern() == "X");
-    CHECK(!rules.insert(99, lv::Rule(lv::RuleAction::Show, lv::RuleMatchType::Literal, "bad")));
+    rules.add(lv::Rule(lv::RuleAction::Show, {{lv::RuleMatchType::Literal, "A"}}));
+    rules.add(lv::Rule(lv::RuleAction::Show, {{lv::RuleMatchType::Literal, "B"}}));
+    CHECK(rules.insert(1, lv::Rule(lv::RuleAction::Show, {{lv::RuleMatchType::Literal, "X"}})));
+    CHECK(rules[1].segments()[0].pattern == "X");
+    CHECK(!rules.insert(99, lv::Rule(lv::RuleAction::Show, {{lv::RuleMatchType::Literal, "bad"}})));
     CHECK(rules.remove(1));
     CHECK(rules.move_down(0));
-    CHECK(rules[0].pattern() == "B");
+    CHECK(rules[0].segments()[0].pattern == "B");
     CHECK(rules.move_up(1));
-    CHECK(rules[0].pattern() == "A");
-    CHECK(rules.replace(1, lv::Rule(lv::RuleAction::Hide, lv::RuleMatchType::Literal, "C")));
+    CHECK(rules[0].segments()[0].pattern == "A");
+    CHECK(rules.replace(1, lv::Rule(lv::RuleAction::Hide, {{lv::RuleMatchType::Literal, "C"}})));
     CHECK(rules[1].serialize() == "h C");
     CHECK(rules.remove(0));
     CHECK_EQ(rules.size(), 1);
@@ -206,7 +236,7 @@ void test_filter_no_rules_all_visible() {
 
 void test_filter_show_literal() {
     lv::RuleSet rules;
-    rules.add(lv::Rule(lv::RuleAction::Show, lv::RuleMatchType::Literal, "ERROR"));
+    rules.add(lv::Rule(lv::RuleAction::Show, {{lv::RuleMatchType::Literal, "ERROR"}}));
     lv::FilterResult result = run_filter("INFO ok\nERROR bad\nWARN meh\nERROR worse\n", rules);
     CHECK_EQ(result.visible_count(), 2);
     CHECK(!result.visible(0));
@@ -219,7 +249,7 @@ void test_filter_show_literal() {
 
 void test_filter_hide_literal() {
     lv::RuleSet rules;
-    rules.add(lv::Rule(lv::RuleAction::Hide, lv::RuleMatchType::Literal, "DEBUG"));
+    rules.add(lv::Rule(lv::RuleAction::Hide, {{lv::RuleMatchType::Literal, "DEBUG"}}));
     lv::FilterResult result = run_filter("INFO ok\nDEBUG detail\nERROR bad\n", rules);
     CHECK_EQ(result.visible_count(), 2);
     CHECK(result.visible(0));
@@ -229,9 +259,9 @@ void test_filter_hide_literal() {
 
 void test_filter_pipeline_layers() {
     lv::RuleSet rules;
-    rules.add(lv::Rule(lv::RuleAction::Show, lv::RuleMatchType::Literal, "ERROR"));
-    rules.add(lv::Rule(lv::RuleAction::Hide, lv::RuleMatchType::Literal, "FATAL"));
-    rules.add(lv::Rule(lv::RuleAction::Show, lv::RuleMatchType::Literal, "auth"));
+    rules.add(lv::Rule(lv::RuleAction::Show, {{lv::RuleMatchType::Literal, "ERROR"}}));
+    rules.add(lv::Rule(lv::RuleAction::Hide, {{lv::RuleMatchType::Literal, "FATAL"}}));
+    rules.add(lv::Rule(lv::RuleAction::Show, {{lv::RuleMatchType::Literal, "auth"}}));
 
     lv::FilterResult result = run_filter(
         "INFO auth ok\n"
@@ -264,7 +294,7 @@ void test_filter_pipeline_layers() {
 
 void test_filter_regex() {
     lv::RuleSet rules;
-    rules.add(lv::Rule(lv::RuleAction::Show, lv::RuleMatchType::Regex, "user=[0-9]+"));
+    rules.add(lv::Rule(lv::RuleAction::Show, {{lv::RuleMatchType::Regex, "user=[0-9]+"}}));
     lv::FilterResult result = run_filter("user=abc\nuser=42\nno user\nuser=7 ok\n", rules);
     CHECK_EQ(result.visible_count(), 2);
     CHECK(!result.visible(0));
@@ -277,7 +307,7 @@ void test_long_line() {
     std::string line(10000, 'x');
     line += "ERROR";
     lv::RuleSet rules;
-    rules.add(lv::Rule(lv::RuleAction::Show, lv::RuleMatchType::Literal, "ERROR"));
+    rules.add(lv::Rule(lv::RuleAction::Show, {{lv::RuleMatchType::Literal, "ERROR"}}));
     lv::FilterResult result = run_filter(line, rules);
     CHECK_EQ(result.line_count(), 1);
     CHECK_EQ(result.visible_count(), 1);
@@ -291,6 +321,9 @@ int main() {
     test_line_index_no_trailing_newline();
     test_line_index_empty_file();
     test_parse_rule();
+    test_parse_rule_regex();
+    test_parse_rule_or();
+    test_parse_rule_mixed();
     test_parse_invalid_rule();
     test_ruleset_save_load();
     test_ruleset_mutation();

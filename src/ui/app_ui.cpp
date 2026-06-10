@@ -919,8 +919,10 @@ std::string AppUi::active_literal_highlight() const {
     const std::size_t start = std::min(rule_cursor_, rules_.size() - 1);
     for (std::size_t offset = 0; offset < rules_.size(); ++offset) {
         const std::size_t index = (start + offset) % rules_.size();
-        if (rules_[index].type() == RuleMatchType::Literal) {
-            return rules_[index].pattern();
+        for (const lv::RuleSegment& seg : rules_[index].segments()) {
+            if (seg.type == RuleMatchType::Literal) {
+                return seg.pattern;
+            }
         }
     }
     return {};

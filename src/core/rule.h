@@ -1,8 +1,10 @@
 #pragma once
 
 #include <boost/regex.hpp>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace lv {
 
@@ -16,13 +18,18 @@ enum class RuleMatchType {
     Regex,
 };
 
+struct RuleSegment {
+    RuleMatchType type;
+    std::string pattern;
+    std::optional<boost::regex> regex;
+};
+
 class Rule {
 public:
-    Rule(RuleAction action, RuleMatchType type, std::string pattern);
+    Rule(RuleAction action, std::vector<RuleSegment> segments);
 
     RuleAction action() const { return action_; }
-    RuleMatchType type() const { return type_; }
-    const std::string& pattern() const { return pattern_; }
+    const std::vector<RuleSegment>& segments() const { return segments_; }
 
     bool matches(std::string_view line) const;
     bool passes(std::string_view line) const;
@@ -30,9 +37,7 @@ public:
 
 private:
     RuleAction action_;
-    RuleMatchType type_;
-    std::string pattern_;
-    boost::regex regex_;
+    std::vector<RuleSegment> segments_;
 };
 
 const char* to_string(RuleAction action);
