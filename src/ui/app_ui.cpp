@@ -1337,8 +1337,20 @@ void AppUi::render_help() {
 }
 
 void AppUi::jump_to_next_match() {
-    wait_for_search();
     if (!search_regex_ || index_.line_count() == 0) {
+        return;
+    }
+    if (search_job_state_) {
+        for (LineNumber c = log_cursor_ + 1; c < index_.line_count(); ++c) {
+            if (!line_visible(c)) continue;
+            boost::cmatch m;
+            std::string_view sv = index_.line(c);
+            if (boost::regex_search(sv.data(), sv.data() + sv.size(), m, *search_regex_)) {
+                log_cursor_ = c;
+                log_top_line_ = c;
+                return;
+            }
+        }
         return;
     }
     const LineNumber next = next_search_match(log_cursor_);
@@ -1349,8 +1361,24 @@ void AppUi::jump_to_next_match() {
 }
 
 void AppUi::jump_to_previous_match() {
-    wait_for_search();
     if (!search_regex_ || index_.line_count() == 0) {
+        return;
+    }
+    if (search_job_state_) {
+        LineNumber c = log_cursor_ > 0 ? log_cursor_ - 1 : 0;
+        while (true) {
+            if (line_visible(c)) {
+                boost::cmatch m;
+                std::string_view sv = index_.line(c);
+                if (boost::regex_search(sv.data(), sv.data() + sv.size(), m, *search_regex_)) {
+                    log_cursor_ = c;
+                    log_top_line_ = c;
+                    return;
+                }
+            }
+            if (c == 0) break;
+            --c;
+        }
         return;
     }
     const LineNumber prev = previous_search_match(log_cursor_);
