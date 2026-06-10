@@ -142,7 +142,7 @@ void test_line_index_empty_file() {
 }
 
 void test_parse_rule() {
-    lv::RuleParseResult parsed = lv::RuleSet::parse_line("ss ERROR");
+    lv::RuleParseResult parsed = lv::RuleSet::parse_line("s ERROR");
     CHECK(parsed.ok);
     CHECK(parsed.rule.action() == lv::RuleAction::Show);
     CHECK(parsed.rule.type() == lv::RuleMatchType::Literal);
@@ -154,8 +154,8 @@ void test_parse_rule() {
 void test_parse_invalid_rule() {
     CHECK(!lv::RuleSet::parse_line("show literal ERROR").ok);
     CHECK(!lv::RuleSet::parse_line("keep ERROR").ok);
-    CHECK(!lv::RuleSet::parse_line("ss").ok);
-    CHECK(!lv::RuleSet::parse_line("s [").ok);
+    CHECK(!lv::RuleSet::parse_line("s").ok);
+    CHECK(!lv::RuleSet::parse_line("s /[/").ok);
 }
 
 void test_ruleset_save_load() {
@@ -170,8 +170,8 @@ void test_ruleset_save_load() {
     lv::RuleSet loaded;
     CHECK(loaded.load(path, &error));
     CHECK_EQ(loaded.size(), 2);
-    CHECK(loaded[0].serialize() == "ss ERROR");
-    CHECK(loaded[1].serialize() == "h DEBUG|TRACE");
+    CHECK(loaded[0].serialize() == "s ERROR");
+    CHECK(loaded[1].serialize() == "h /DEBUG|TRACE/");
     ::unlink(path.c_str());
 }
 
@@ -188,7 +188,7 @@ void test_ruleset_mutation() {
     CHECK(rules.move_up(1));
     CHECK(rules[0].pattern() == "A");
     CHECK(rules.replace(1, lv::Rule(lv::RuleAction::Hide, lv::RuleMatchType::Literal, "C")));
-    CHECK(rules[1].serialize() == "hh C");
+    CHECK(rules[1].serialize() == "h C");
     CHECK(rules.remove(0));
     CHECK_EQ(rules.size(), 1);
 }

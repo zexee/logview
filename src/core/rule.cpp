@@ -31,15 +31,15 @@ bool Rule::passes(std::string_view line) const {
 
 std::string Rule::serialize() const {
     if (action_ == RuleAction::Show && type_ == RuleMatchType::Regex) {
-        return "s " + pattern_;
+        return "s /" + pattern_ + "/";
     }
     if (action_ == RuleAction::Hide && type_ == RuleMatchType::Regex) {
-        return "h " + pattern_;
+        return "h /" + pattern_ + "/";
     }
     if (action_ == RuleAction::Show && type_ == RuleMatchType::Literal) {
-        return "ss " + pattern_;
+        return "s " + pattern_;
     }
-    return "hh " + pattern_;
+    return "h " + pattern_;
 }
 
 const char* to_string(RuleAction action) {

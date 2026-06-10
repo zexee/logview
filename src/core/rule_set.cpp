@@ -19,20 +19,10 @@ std::string ltrim(std::string text) {
 bool parse_rule_operator(const std::string& token, RuleAction* action, RuleMatchType* type) {
     if (token == "s") {
         *action = RuleAction::Show;
-        *type = RuleMatchType::Regex;
-        return true;
-    }
-    if (token == "h") {
-        *action = RuleAction::Hide;
-        *type = RuleMatchType::Regex;
-        return true;
-    }
-    if (token == "ss") {
-        *action = RuleAction::Show;
         *type = RuleMatchType::Literal;
         return true;
     }
-    if (token == "hh") {
+    if (token == "h") {
         *action = RuleAction::Hide;
         *type = RuleMatchType::Literal;
         return true;
@@ -147,7 +137,7 @@ RuleParseResult RuleSet::parse_line(const std::string& line) {
     RuleAction action = RuleAction::Show;
     RuleMatchType type = RuleMatchType::Literal;
     if (!parse_rule_operator(operator_token, &action, &type)) {
-        return {.ok = false, .error = "expected rule operator 's', 'h', 'ss', or 'hh'"};
+        return {.ok = false, .error = "expected rule operator 's' or 'h'"};
     }
 
     std::string pattern;
@@ -159,6 +149,10 @@ RuleParseResult RuleSet::parse_line(const std::string& line) {
         if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
             pattern = pattern.substr(1, pattern.size() - 2);
         }
+    }
+    if (pattern.size() >= 2 && pattern.front() == '/' && pattern.back() == '/') {
+        type = RuleMatchType::Regex;
+        pattern = pattern.substr(1, pattern.size() - 2);
     }
     if (pattern.empty()) {
         return {.ok = false, .error = "missing rule pattern"};
