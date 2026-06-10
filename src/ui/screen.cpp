@@ -1,8 +1,11 @@
 #include "ui/screen.h"
 
+#include <clocale>
+
 namespace lv::ui {
 
 Screen::Screen() {
+    std::setlocale(LC_ALL, "");
     initscr();
     cbreak();
     noecho();

@@ -12,6 +12,61 @@
 
 namespace lv::ui {
 
+namespace {
+
+int utf8_char_width(const char* p) {
+    unsigned char c = static_cast<unsigned char>(*p);
+    if (c < 0x80) return 1;
+    if ((c & 0xE0) == 0xC0) return 1;
+    if ((c & 0xF0) == 0xE0) return 2;
+    if ((c & 0xF8) == 0xF0) return 2;
+    return 1;
+}
+
+int utf8_byte_len(unsigned char c) {
+    if (c < 0x80) return 1;
+    if ((c & 0xE0) == 0xC0) return 2;
+    if ((c & 0xF0) == 0xE0) return 3;
+    if ((c & 0xF8) == 0xF0) return 4;
+    return 1;
+}
+
+int utf8_display_width(std::string_view sv) {
+    int w = 0;
+    std::size_t i = 0;
+    while (i < sv.size()) {
+        unsigned char c = static_cast<unsigned char>(sv[i]);
+        int len = utf8_byte_len(c);
+        if (len >= 2 && i + len <= sv.size()) {
+            w += utf8_char_width(sv.data() + i);
+            i += static_cast<std::size_t>(len);
+        } else {
+            w += 1;
+            ++i;
+        }
+    }
+    return w;
+}
+
+std::size_t utf8_byte_at_column(std::string_view sv, int col) {
+    std::size_t i = 0;
+    int current = 0;
+    while (i < sv.size() && current < col) {
+        unsigned char c = static_cast<unsigned char>(sv[i]);
+        int len = utf8_byte_len(c);
+        if (len >= 2 && i + len <= sv.size()) {
+            current += utf8_char_width(sv.data() + i);
+            i += static_cast<std::size_t>(len);
+        } else {
+            current += 1;
+            ++i;
+        }
+    }
+    return i;
+}
+
+} // namespace
+
 AppUi::AppUi(MMapFile file, LineIndex index, RuleSet rules, std::string rule_path)
     : file_(std::move(file)), index_(std::move(index)), rules_(std::move(rules)), rule_path_(std::move(rule_path)) {}
 
@@ -166,10 +221,11 @@ void AppUi::render_log() {
         const std::vector<HighlightMatch> search_matches =
             search_regex_ ? find_line_matches(line_number) : std::vector<HighlightMatch>{};
         for (int wrap = 0; wrap < wraps && row <= content_height; ++wrap, ++row) {
-            const std::size_t offset = static_cast<std::size_t>(wrap * content_width);
-            const std::size_t remaining = offset < line.size() ? line.size() - offset : 0;
-            const int chunk_len = static_cast<int>(std::min<std::size_t>(remaining, content_width));
-            const std::string_view chunk(line.data() + offset, static_cast<std::size_t>(chunk_len));
+            const int wrap_start_col = wrap * content_width;
+            const std::size_t offset = utf8_byte_at_column(line, wrap_start_col);
+            const std::size_t end_offset = utf8_byte_at_column(line, wrap_start_col + content_width);
+            const std::size_t chunk_bytes = std::min(end_offset, line.size()) - offset;
+            const std::string_view chunk(line.data() + offset, chunk_bytes);
 
             if (wrap == 0) {
                 wattron(log_window_, COLOR_PAIR(4));
@@ -185,10 +241,11 @@ void AppUi::render_log() {
                 wattron(log_window_, A_REVERSE);
             }
 
-            if (chunk_len > 0) {
+            if (chunk_bytes > 0) {
                 render_log_chunk(row, number_width, chunk, highlight, selected);
             }
-            const int used = number_width + chunk_len;
+            const int chunk_display_width = utf8_display_width(chunk);
+            const int used = number_width + chunk_display_width;
             if (used < log_rect_.width) {
                 mvwprintw(log_window_, row, used, "%*s", log_rect_.width - used, "");
             }
@@ -197,22 +254,19 @@ void AppUi::render_log() {
             }
 
             if (search_regex_ && !search_matches.empty()) {
+                const std::size_t chunk_byte_end = offset + chunk_bytes;
                 for (const HighlightMatch& m : search_matches) {
-                    if (m.start < offset + chunk_len && m.start + m.length > offset) {
+                    if (m.start < chunk_byte_end && m.start + m.length > offset) {
                         const std::size_t chunk_start =
                             m.start > offset ? m.start - offset : 0;
                         const std::size_t chunk_end =
-                            std::min(m.start + m.length, offset + chunk_len) - offset;
+                            std::min(m.start + m.length, chunk_byte_end) - offset;
                         const std::size_t match_chunk_len = chunk_end - chunk_start;
-                        const int draw_col = number_width + static_cast<int>(chunk_start);
+                        const int draw_col = number_width + utf8_display_width(
+                            std::string_view(chunk.data(), chunk_start));
                         wattron(log_window_, COLOR_PAIR(3) | A_BOLD);
                         wmove(log_window_, row, draw_col);
-                        for (std::size_t i = 0; i < match_chunk_len; ++i) {
-                            const std::size_t chunk_idx = chunk_start + i;
-                            if (chunk_idx < chunk.size()) {
-                                waddch(log_window_, printable_char(chunk[chunk_idx]));
-                            }
-                        }
+                        waddnstr(log_window_, chunk.data() + chunk_start, static_cast<int>(match_chunk_len));
                         wattroff(log_window_, COLOR_PAIR(3) | A_BOLD);
                     }
                 }
@@ -932,9 +986,8 @@ int AppUi::line_wrap_rows(LineNumber line, int content_width) const {
     if (content_width <= 0 || line >= index_.line_count()) {
         return 1;
     }
-    const std::size_t size = index_.line(line).size();
-    return std::max(1, static_cast<int>((size + static_cast<std::size_t>(content_width) - 1) /
-                                        static_cast<std::size_t>(content_width)));
+    const std::string_view sv = index_.line(line);
+    return std::max(1, (utf8_display_width(sv) + content_width - 1) / content_width);
 }
 
 void AppUi::keep_cursor_visible(int content_width, int content_height) {
@@ -1356,46 +1409,53 @@ void AppUi::render_log_chunk(int row,
                              std::string_view chunk,
                              const std::string& highlight,
                              bool selected) {
+    auto wadd_sanitized = [](WINDOW* win, const char* data, int len) {
+        int i = 0;
+        while (i < len) {
+            unsigned char c = static_cast<unsigned char>(data[i]);
+            if (c == '\t') {
+                waddch(win, ' ');
+                ++i;
+            } else if (c < 32 || c == 127) {
+                waddch(win, '.');
+                ++i;
+            } else {
+                int start = i;
+                while (i < len) {
+                    unsigned char ch = static_cast<unsigned char>(data[i]);
+                    if (ch < 32 || ch == 127 || ch == '\t') break;
+                    ++i;
+                }
+                if (i > start) {
+                    waddnstr(win, data + start, i - start);
+                }
+            }
+        }
+    };
+
     int x = col;
     std::size_t pos = 0;
     while (pos < chunk.size()) {
         const std::size_t match = highlight.empty() || selected ? std::string_view::npos : chunk.find(highlight, pos);
         if (match == std::string_view::npos) {
             wmove(log_window_, row, x);
-            while (pos < chunk.size()) {
-                waddch(log_window_, printable_char(chunk[pos]));
-                ++pos;
-            }
+            wadd_sanitized(log_window_, chunk.data() + pos, static_cast<int>(chunk.size() - pos));
             return;
         }
         if (match > pos) {
+            const int seg_len = static_cast<int>(match - pos);
             wmove(log_window_, row, x);
-            while (pos < match) {
-                waddch(log_window_, printable_char(chunk[pos]));
-                ++x;
-                ++pos;
-            }
+            wadd_sanitized(log_window_, chunk.data() + pos, seg_len);
+            x += seg_len;
         }
         wattron(log_window_, COLOR_PAIR(2) | A_BOLD);
         wmove(log_window_, row, x);
-        for (std::size_t i = 0; i < highlight.size() && match + i < chunk.size(); ++i) {
-            waddch(log_window_, printable_char(chunk[match + i]));
-        }
+        const int hl_len = static_cast<int>(std::min(highlight.size(), chunk.size() - match));
+        wadd_sanitized(log_window_, chunk.data() + match, hl_len);
         wattroff(log_window_, COLOR_PAIR(2) | A_BOLD);
         x += static_cast<int>(highlight.size());
         pos = match + highlight.size();
     }
-}
-
-char AppUi::printable_char(char ch) {
-    const unsigned char value = static_cast<unsigned char>(ch);
-    if (value == '\t') {
-        return ' ';
-    }
-    if (value < 32 || value == 127) {
-        return '.';
-    }
-    return ch;
 }
 
 } // namespace lv::ui

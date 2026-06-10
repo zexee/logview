@@ -90,7 +90,6 @@ private:
     void handle_help_key(int key);
     void render_help();
     void render_log_chunk(int row, int col, std::string_view chunk, const std::string& highlight, bool selected);
-    static char printable_char(char ch);
 
     Screen screen_;
     MMapFile file_;
