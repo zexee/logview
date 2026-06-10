@@ -92,11 +92,17 @@ void AppUi::destroy_windows() {
         delwin(editor_window_);
         editor_window_ = nullptr;
     }
+    if (help_window_ != nullptr) {
+        delwin(help_window_);
+        help_window_ = nullptr;
+    }
 }
 
 void AppUi::render() {
     render_log();
-    if (rules_visible_) {
+    if (help_active_) {
+        render_help();
+    } else if (rules_visible_) {
         render_rules();
     }
     render_editor();
@@ -303,6 +309,10 @@ int AppUi::normalize_key(int key) {
 }
 
 void AppUi::handle_key(int key) {
+    if (help_active_) {
+        handle_help_key(key);
+        return;
+    }
     if (editor_.active()) {
         const LineEditorEvent event = editor_.handle_key(key);
         if (event == LineEditorEvent::Submitted) {
@@ -358,6 +368,9 @@ void AppUi::handle_key(int key) {
         if (focus_ == Focus::Log) {
             begin_search();
         }
+        break;
+    case '?':
+        begin_help();
         break;
     case 'q':
         running_ = false;
@@ -1138,6 +1151,136 @@ void AppUi::cancel_search_job() {
         search_thread_.join();
     }
     search_job_state_.reset();
+}
+
+void AppUi::begin_help() {
+    help_active_ = true;
+    help_scroll_ = 0;
+    recreate_windows();
+}
+
+void AppUi::close_help() {
+    help_active_ = false;
+    help_scroll_ = 0;
+    if (help_window_ != nullptr) {
+        delwin(help_window_);
+        help_window_ = nullptr;
+    }
+}
+
+void AppUi::handle_help_key(int key) {
+    switch (key) {
+    case 27:
+        close_help();
+        break;
+    case 'k':
+    case KEY_UP:
+        if (help_scroll_ > 0) {
+            --help_scroll_;
+        }
+        break;
+    case 'j':
+    case KEY_DOWN:
+        ++help_scroll_;
+        break;
+    case 'g':
+    case KEY_HOME:
+        help_scroll_ = 0;
+        break;
+    case 'G':
+    case KEY_END:
+        help_scroll_ = static_cast<std::size_t>(-1);
+        break;
+    case KEY_NPAGE:
+    case 6:
+        help_scroll_ += 10;
+        break;
+    case KEY_PPAGE:
+    case 2:
+        help_scroll_ = help_scroll_ > 10 ? help_scroll_ - 10 : 0;
+        break;
+    case 'q':
+    case '?':
+        close_help();
+        break;
+    }
+    dirty_ = true;
+}
+
+void AppUi::render_help() {
+    static const std::vector<std::string> lines = {
+        " KEYBINDINGS",
+        "",
+        " Log navigation",
+        "   j / Down          next visible line",
+        "   k / Up            previous visible line",
+        "   g / Home          first visible line",
+        "   G / End           last visible line",
+        "   PgDn / Ctrl-F     page down",
+        "   PgUp / Ctrl-B     page up",
+        "   Tab               switch focus",
+        "   Space             toggle filters window",
+        "   /                 search (regex), Enter to submit",
+        "   n / N             next / previous search match",
+        "   ?                 this help",
+        "",
+        " Rules window (focus with Tab)",
+        "   j / k / Up / Down navigate rules",
+        "   Enter             edit rule",
+        "   a / i / A / I     insert rule (after/before/end/start)",
+        "   x / d             delete rule",
+        "   [ / ]             move rule up / down",
+        "   -                 toggle rule enabled / disabled",
+        "   Space / Esc       hide rules window",
+        "",
+        " Commands (type : to enter)",
+        "   :o [file]         open log file (:o alone reloads)",
+        "   :w <file>         save filtered lines to file",
+        "   :r <file>         load rules from file",
+        "   :wr [file]        write rules to file",
+        "   :q                quit",
+    };
+
+    const int screen_rows = std::max(3, screen_.rows());
+    const int screen_cols = std::max(20, screen_.cols());
+    const int popup_w = std::min(62, screen_cols - 4);
+    const int popup_h = std::min(static_cast<int>(lines.size()) + 2, screen_rows - 4);
+    const int popup_y = (screen_rows - popup_h) / 2;
+    const int popup_x = (screen_cols - popup_w) / 2;
+
+    if (help_window_ == nullptr) {
+        help_window_ = newwin(popup_h, popup_w, popup_y, popup_x);
+        keypad(help_window_, TRUE);
+    }
+
+    const int total_lines = static_cast<int>(lines.size());
+    const int visible = popup_h - 2;
+    if (help_scroll_ > static_cast<std::size_t>(total_lines - visible)) {
+        help_scroll_ = total_lines > visible ? static_cast<std::size_t>(total_lines - visible) : 0;
+    }
+
+    werase(help_window_);
+    box(help_window_, 0, 0);
+    if (focus_ == Focus::Log) {
+        wattron(help_window_, COLOR_PAIR(1));
+    }
+    mvwprintw(help_window_, 0, 1, " HELP ");
+    if (focus_ == Focus::Log) {
+        wattroff(help_window_, COLOR_PAIR(1));
+    }
+
+    for (int i = 0; i < visible; ++i) {
+        const std::size_t line_idx = help_scroll_ + static_cast<std::size_t>(i);
+        if (line_idx >= lines.size()) {
+            break;
+        }
+        const std::string& text = lines[line_idx];
+        const int max_len = popup_w - 3;
+        const int len = std::min<int>(static_cast<int>(text.size()), max_len);
+        mvwaddnstr(help_window_, i + 1, 1, text.c_str(), len);
+    }
+
+    wnoutrefresh(help_window_);
 }
 
 void AppUi::jump_to_next_match() {

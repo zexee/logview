@@ -84,6 +84,11 @@ private:
     void poll_search_job();
     void wait_for_search();
     void cancel_search_job();
+
+    void begin_help();
+    void close_help();
+    void handle_help_key(int key);
+    void render_help();
     void render_log_chunk(int row, int col, std::string_view chunk, const std::string& highlight, bool selected);
     static char printable_char(char ch);
 
@@ -137,9 +142,13 @@ private:
     std::shared_ptr<SearchJobState> search_job_state_;
     std::thread search_thread_;
 
+    bool help_active_ = false;
+    std::size_t help_scroll_ = 0;
+
     WINDOW* log_window_ = nullptr;
     WINDOW* rules_window_ = nullptr;
     WINDOW* editor_window_ = nullptr;
+    WINDOW* help_window_ = nullptr;
     Rect log_rect_;
     Rect rules_rect_;
     Rect editor_rect_;
