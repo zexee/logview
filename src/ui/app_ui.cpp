@@ -774,7 +774,7 @@ void AppUi::begin_rule_add(std::size_t index) {
     editing_rule_ = true;
     adding_rule_ = true;
     pending_insert_index_ = std::min(index, rules_.size());
-    editor_.start("", "s ");
+    editor_.start("", "");
 }
 
 void AppUi::delete_selected_rule() {
@@ -1458,6 +1458,15 @@ void AppUi::render_help() {
         "   -                 toggle rule enabled / disabled",
         "   Space / Esc       hide rules window",
         "",
+        " Rule syntax",
+        "   s/h  PATTERN    show/hide lines matching PATTERN",
+        "   s/h  /regex/    show/hide lines matching regex",
+        "   s/h  A|B|/C/    OR: mix literal + regex",
+        "   sl/hl N [M]      show/hide line N to M (to end)",
+        "   sl/hl -N         show/hide last N lines",
+        "   sl/hl -N -M      show/hide from Nth to Mth last",
+        "   -s /...          disable rule (- prefix)",
+        "",
         " Commands (type : to enter)",
         "   :o [file]         open log file (:o alone reloads)",
         "   :w <file>         save filtered lines to file",
@@ -1468,7 +1477,7 @@ void AppUi::render_help() {
 
     const int screen_rows = std::max(3, screen_.rows());
     const int screen_cols = std::max(20, screen_.cols());
-    const int popup_w = std::min(62, screen_cols - 4);
+    const int popup_w = std::min(70, screen_cols - 4);
     const int popup_h = std::min(static_cast<int>(lines.size()) + 2, screen_rows - 4);
     const int popup_y = (screen_rows - popup_h) / 2;
     const int popup_x = (screen_cols - popup_w) / 2;
