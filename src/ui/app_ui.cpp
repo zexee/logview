@@ -458,6 +458,9 @@ void AppUi::handle_key(int key) {
     case '?':
         begin_help();
         break;
+    case 4:
+        running_ = false;
+        break;
     case KEY_UP:
     case 'k':
         if (focus_ == Focus::Rules) {
