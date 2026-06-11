@@ -43,9 +43,9 @@ LineEditorEvent LineEditor::handle_key(int key) {
             active_ = false;
             return LineEditorEvent::Submitted;
         case 27:
+        case 3:
             cancel();
             return LineEditorEvent::Canceled;
-        case KEY_LEFT:
             if (cursor_ > 0) {
                 --cursor_;
             }
@@ -94,6 +94,7 @@ LineEditorEvent LineEditor::handle_key(int key) {
         destroy_form();
         return LineEditorEvent::Submitted;
     case 27:
+    case 3:
         cancel();
         return LineEditorEvent::Canceled;
     case KEY_LEFT:
