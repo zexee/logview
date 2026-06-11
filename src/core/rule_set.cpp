@@ -150,13 +150,6 @@ RuleParseResult RuleSet::parse_line(const std::string& line) {
         return {.ok = false, .error = "missing rule pattern"};
     }
 
-    if (raw.size() >= 2) {
-        const char first = raw.front();
-        const char last = raw.back();
-        if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
-            raw = raw.substr(1, raw.size() - 2);
-        }
-    }
     if (!raw.empty() && raw.back() == '|') {
         return {.ok = false, .error = "trailing '|' in rule pattern"};
     }
@@ -169,19 +162,25 @@ RuleParseResult RuleSet::parse_line(const std::string& line) {
     while (pos < raw.size()) {
         std::size_t bar = raw.find('|', pos);
         std::string seg_text = raw.substr(pos, bar - pos);
-        seg_text = ltrim(seg_text);
-        if (seg_text.empty()) {
-            return {.ok = false, .error = "empty segment in rule pattern"};
-        }
 
-        RuleSegment seg;
+        bool quoted = false;
         if (seg_text.size() >= 2) {
             const char sf = seg_text.front();
             const char sl = seg_text.back();
             if ((sf == '"' && sl == '"') || (sf == '\'' && sl == '\'')) {
                 seg_text = seg_text.substr(1, seg_text.size() - 2);
+                quoted = true;
             }
         }
+
+        if (!quoted) {
+            seg_text = ltrim(seg_text);
+        }
+        if (seg_text.empty()) {
+            return {.ok = false, .error = "empty segment in rule pattern"};
+        }
+
+        RuleSegment seg;
         if (seg_text.size() >= 2 && seg_text.front() == '/' && seg_text.back() == '/') {
             seg.type = RuleMatchType::Regex;
             seg.pattern = seg_text.substr(1, seg_text.size() - 2);

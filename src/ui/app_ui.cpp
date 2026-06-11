@@ -422,8 +422,8 @@ void AppUi::handle_key(int key) {
     case ' ':
         if (focus_ == Focus::Log) {
             rules_visible_ = !rules_visible_;
-            if (!rules_visible_) {
-                focus_ = Focus::Log;
+            if (rules_visible_) {
+                focus_ = Focus::Rules;
             }
         } else if (focus_ == Focus::Rules) {
             rules_visible_ = false;
