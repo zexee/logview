@@ -244,7 +244,7 @@ void LineEditor::sync_text_from_field() {
         return;
     }
     form_driver(form_, REQ_VALIDATION);
-    text_ = trim_field_buffer(field_buffer(fields_[0], 0));
+    text_ = trim_field_buffer(field_buffer(fields_[0], 0), cursor_);
     cursor_ = std::min(cursor_, text_.size());
 }
 
@@ -313,13 +313,18 @@ void LineEditor::history_next() {
     }
 }
 
-std::string LineEditor::trim_field_buffer(const char* buffer) {
+std::string LineEditor::trim_field_buffer(const char* buffer, std::size_t cursor_pos) {
     if (buffer == nullptr) {
         return {};
     }
     std::string text(buffer);
-    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back()))) {
-        text.pop_back();
+    std::size_t last_non_ws = text.size();
+    while (last_non_ws > 0 && std::isspace(static_cast<unsigned char>(text[last_non_ws - 1]))) {
+        --last_non_ws;
+    }
+    std::size_t keep = std::max(cursor_pos, last_non_ws);
+    if (keep < text.size()) {
+        text.resize(keep);
     }
     return text;
 }

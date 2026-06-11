@@ -40,7 +40,7 @@ private:
     void commit_history();
     void history_previous();
     void history_next();
-    static std::string trim_field_buffer(const char* buffer);
+    static std::string trim_field_buffer(const char* buffer, std::size_t cursor_pos);
 
     bool active_ = false;
     std::string prompt_;
