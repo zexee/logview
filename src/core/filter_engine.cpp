@@ -20,7 +20,7 @@ FilterResult FilterEngine::run(const LineIndex& index, const RuleSet& rules) con
             }
             bool bit = false;
             if (visible) {
-                bit = rules[rule_index].passes(line);
+                bit = rules[rule_index].passes(line, line_number, index.line_count());
             }
             result.layer(rule_index).set(line_number, bit);
             visible = bit;
@@ -43,7 +43,7 @@ void FilterEngine::recompute_from(FilterResult& result, const LineIndex& index,
             }
             bool bit = false;
             if (visible) {
-                bit = rules[rule_index].passes(index.line(line_number));
+                bit = rules[rule_index].passes(index.line(line_number), line_number, index.line_count());
             }
             result.layer(rule_index).set(line_number, bit);
             visible = bit;

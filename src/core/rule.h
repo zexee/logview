@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/regex.hpp>
+#include "core/types.h"
 #include <optional>
 #include <string>
 #include <string_view>
@@ -16,12 +17,16 @@ enum class RuleAction {
 enum class RuleMatchType {
     Literal,
     Regex,
+    LineRange,
 };
 
 struct RuleSegment {
     RuleMatchType type;
     std::string pattern;
     std::optional<boost::regex> regex;
+    LineNumber line_start = 0;
+    LineNumber line_end = 0;
+    bool has_line_end = false;
 };
 
 class Rule {
@@ -33,8 +38,8 @@ public:
     bool enabled() const { return enabled_; }
     void set_enabled(bool enabled) { enabled_ = enabled; }
 
-    bool matches(std::string_view line) const;
-    bool passes(std::string_view line) const;
+    bool matches(std::string_view line, LineNumber line_number = 0, LineNumber total_lines = 0) const;
+    bool passes(std::string_view line, LineNumber line_number = 0, LineNumber total_lines = 0) const;
     std::string serialize() const;
 
 private:

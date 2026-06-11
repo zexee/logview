@@ -16,13 +16,25 @@ std::string ltrim(std::string text) {
     return text;
 }
 
-bool parse_rule_operator(const std::string& token, RuleAction* action) {
+bool parse_rule_operator(const std::string& token, RuleAction* action, bool* is_line_range) {
+    if (token == "sl") {
+        *action = RuleAction::Show;
+        *is_line_range = true;
+        return true;
+    }
+    if (token == "hl") {
+        *action = RuleAction::Hide;
+        *is_line_range = true;
+        return true;
+    }
     if (token == "s") {
         *action = RuleAction::Show;
+        *is_line_range = false;
         return true;
     }
     if (token == "h") {
         *action = RuleAction::Hide;
+        *is_line_range = false;
         return true;
     }
     return false;
@@ -139,8 +151,33 @@ RuleParseResult RuleSet::parse_line(const std::string& line) {
     }
 
     RuleAction action = RuleAction::Show;
-    if (!parse_rule_operator(operator_token, &action)) {
-        return {.ok = false, .error = "expected rule operator 's' or 'h'"};
+    bool is_line_range = false;
+    if (!parse_rule_operator(operator_token, &action, &is_line_range)) {
+        return {.ok = false, .error = "expected rule operator 's', 'h', 'sl', or 'hl'"};
+    }
+
+    if (is_line_range) {
+        std::int64_t start_val = 0;
+        input >> start_val;
+        if (input.fail() || start_val == 0) {
+            return {.ok = false, .error = "sl/hl requires start line number (1-based)"};
+        }
+
+        RuleSegment seg;
+        seg.type = RuleMatchType::LineRange;
+        seg.line_start = (start_val > 0) ? static_cast<LineNumber>(start_val)
+                                          : static_cast<LineNumber>(start_val);
+
+        std::int64_t end_val = 0;
+        if (input >> end_val) {
+            seg.line_end = (end_val > 0) ? static_cast<LineNumber>(end_val)
+                                          : static_cast<LineNumber>(end_val);
+            seg.has_line_end = true;
+        }
+
+        auto rule = Rule(action, {std::move(seg)});
+        rule.set_enabled(enabled);
+        return {.ok = true, .rule = std::move(rule), .error = ""};
     }
 
     std::string raw;

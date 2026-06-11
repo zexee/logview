@@ -55,6 +55,17 @@ h /PATTERN/      hide lines matching regex PATTERN
 -s PATTERN       same as above but rule disabled
 s A|B|C          OR: show lines matching A or B or C
 s /[0-9]/|A      mixed regex + literal OR
+sl N [M]         show line N to M (default to end)
+hl N [M]         hide line N to M (default to end)
+```
+
+Line range examples | 行范围示例:
+```
+sl 5             lines 5 to end
+sl 5 10          lines 5 to 10
+hl 3 7           hide lines 3 to 7
+sl -3            last 3 lines
+hl -2 -1         hide last 2 lines
 ```
 
 Rules form a pipeline: each line passes through rules in order.
