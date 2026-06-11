@@ -75,6 +75,8 @@ private:
 
     void begin_search();
     void handle_search_submit();
+    void incsearch();
+    void poll_incsearch();
     void jump_to_next_match();
     void jump_to_previous_match();
     LineNumber next_search_match(LineNumber line) const;
@@ -116,6 +118,7 @@ private:
     std::string search_pattern_;
     std::unique_ptr<boost::regex> search_regex_;
     BitArray search_matches_;
+    std::size_t search_orig_cursor_ = 0;
     std::uint64_t next_filter_generation_ = 1;
     std::uint64_t applied_filter_generation_ = 0;
 
@@ -141,6 +144,19 @@ private:
 
     std::shared_ptr<SearchJobState> search_job_state_;
     std::thread search_thread_;
+
+    struct IncsearchResult {
+        std::mutex mutex;
+        bool ready = false;
+        int generation = 0;
+        LineNumber cursor = 0;
+        bool found = false;
+        std::string status;
+    };
+
+    std::shared_ptr<IncsearchResult> incsearch_result_;
+    std::thread incsearch_thread_;
+    int incsearch_gen_ = 0;
 
     bool help_active_ = false;
     std::size_t help_scroll_ = 0;

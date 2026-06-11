@@ -19,6 +19,8 @@ public:
     ByteOffset line_end(LineNumber number) const;
 
     const std::vector<ByteOffset>& starts() const { return line_starts_; }
+    const char* data() const { return data_; }
+    std::size_t size() const { return size_; }
 
 private:
     const char* data_ = nullptr;

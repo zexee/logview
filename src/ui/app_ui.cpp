@@ -73,6 +73,9 @@ AppUi::AppUi(MMapFile file, LineIndex index, RuleSet rules, std::string rule_pat
 AppUi::~AppUi() {
     join_filter_jobs();
     cancel_search_job();
+    if (incsearch_thread_.joinable()) {
+        incsearch_thread_.detach();
+    }
 }
 
 int AppUi::run() {
@@ -83,11 +86,24 @@ int AppUi::run() {
             dirty_ = true;
         }
         poll_search_job();
+        poll_incsearch();
         if (dirty_) {
             render();
             dirty_ = false;
         }
-        int key = getch();
+        int key = ERR;
+        if (editor_.active()) {
+            key = getch();
+            if (key != ERR) {
+                key = normalize_key(key);
+                handle_key(key);
+            }
+            if (!editor_.active()) continue;
+            render_editor();
+            doupdate();
+            continue;
+        }
+        key = getch();
         if (key != ERR) {
             key = normalize_key(key);
             handle_key(key);
@@ -154,6 +170,11 @@ void AppUi::destroy_windows() {
 }
 
 void AppUi::render() {
+    if (editor_.active()) {
+        render_editor();
+        doupdate();
+        return;
+    }
     render_log();
     if (help_active_) {
         render_help();
@@ -383,9 +404,13 @@ void AppUi::handle_key(int key) {
             adding_rule_ = false;
             if (search_active_) {
                 search_active_ = false;
+                log_cursor_ = search_orig_cursor_;
+                incsearch_result_.reset();
             }
             render();
             dirty_ = false;
+        } else if (search_active_ && event == LineEditorEvent::None) {
+            incsearch();
         }
         return;
     }
@@ -702,6 +727,7 @@ void AppUi::open_log_file(const std::string& path) {
     search_pattern_.clear();
     search_status_.clear();
     search_matches_ = BitArray();
+    incsearch_result_.reset();
     log_cursor_ = 0;
     log_top_line_ = 0;
     status_ = "opened; filtering: " + path;
@@ -1109,6 +1135,7 @@ std::string AppUi::active_literal_highlight() const {
 
 void AppUi::begin_search() {
     search_active_ = true;
+    search_orig_cursor_ = log_cursor_;
     editing_rule_ = false;
     adding_rule_ = false;
     editor_.start("/", "");
@@ -1172,6 +1199,112 @@ void AppUi::handle_search_submit() {
     });
 
     search_status_ = "searching...";
+}
+
+void AppUi::incsearch() {
+    std::string text = editor_.text();
+    const int gen = ++incsearch_gen_;
+
+    if (text.empty()) {
+        log_cursor_ = search_orig_cursor_;
+        search_status_.clear();
+        return;
+    }
+
+    LineNumber orig_cursor = search_orig_cursor_;
+    const char* data = index_.data();
+    std::size_t data_size = index_.size();
+    LineNumber total = index_.line_count();
+
+    auto result = std::make_shared<IncsearchResult>();
+    result->generation = gen;
+    incsearch_result_ = result;
+
+    if (incsearch_thread_.joinable()) {
+        incsearch_thread_.detach();
+    }
+
+    incsearch_thread_ = std::thread([result, text = std::move(text), data, data_size, total,
+                                      orig_cursor, gen, filter_bitmap = filter_bitmap_,
+                                      starts = std::make_shared<std::vector<ByteOffset>>(), 
+                                      &starts_ref = index_.starts()]() mutable {
+        *starts = starts_ref;
+
+        boost::regex re;
+        try {
+            re = boost::regex(text);
+        } catch (const boost::regex_error&) {
+            std::lock_guard<std::mutex> lock(result->mutex);
+            result->status = "/" + text + " [invalid]";
+            result->ready = true;
+            return;
+        }
+
+        for (LineNumber c = orig_cursor; c < total; ++c) {
+            if (filter_bitmap && !filter_bitmap->get(c)) continue;
+            ByteOffset start = (*starts)[c];
+            ByteOffset end = (c + 1 < starts->size()) ? (*starts)[c + 1] : data_size;
+            std::string_view sv(data + start, end - start);
+            boost::cmatch m;
+            if (boost::regex_search(sv.data(), sv.data() + sv.size(), m, re)) {
+                std::lock_guard<std::mutex> lock(result->mutex);
+                result->cursor = c;
+                result->found = true;
+                result->ready = true;
+                return;
+            }
+        }
+
+        for (LineNumber c = 0; c < orig_cursor; ++c) {
+            if (filter_bitmap && !filter_bitmap->get(c)) continue;
+            ByteOffset start = (*starts)[c];
+            ByteOffset end = (c + 1 < starts->size()) ? (*starts)[c + 1] : data_size;
+            std::string_view sv(data + start, end - start);
+            boost::cmatch m;
+            if (boost::regex_search(sv.data(), sv.data() + sv.size(), m, re)) {
+                std::lock_guard<std::mutex> lock(result->mutex);
+                result->cursor = c;
+                result->found = true;
+                result->ready = true;
+                return;
+            }
+        }
+
+        std::lock_guard<std::mutex> lock(result->mutex);
+        result->status = "/" + text + " [not found]";
+        result->ready = true;
+    });
+}
+
+void AppUi::poll_incsearch() {
+    if (!incsearch_result_) return;
+
+    bool ready = false;
+    {
+        std::lock_guard<std::mutex> lock(incsearch_result_->mutex);
+        ready = incsearch_result_->ready;
+    }
+
+    if (!ready) return;
+
+    if (incsearch_result_->generation != incsearch_gen_) {
+        incsearch_result_.reset();
+        return;
+    }
+
+    if (incsearch_result_->found) {
+        log_cursor_ = incsearch_result_->cursor;
+        search_status_.clear();
+        if (editor_.active()) {
+            render_log();
+        }
+    } else {
+        log_cursor_ = search_orig_cursor_;
+        search_status_ = incsearch_result_->status;
+    }
+
+    incsearch_result_.reset();
+    dirty_ = true;
 }
 
 void AppUi::build_search_bitmap() {
