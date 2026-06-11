@@ -303,14 +303,21 @@ void AppUi::render_rules() {
 
 void AppUi::render_editor() {
     editor_.render(editor_window_, editor_rect_.width);
-    if (!editor_.active() && !status_.empty()) {
+    if (!editor_.active()) {
         const int width = std::max(1, editor_rect_.width);
-        const int max_status_width = std::max(0, width - 8);
-        const int status_width = std::min<int>(max_status_width, static_cast<int>(status_.size()));
-        const int start = std::max(0, width - status_width);
-        const std::string_view visible_status(status_.data() + status_.size() - static_cast<std::size_t>(status_width),
-                                              static_cast<std::size_t>(status_width));
-        mvwaddnstr(editor_window_, 0, start, visible_status.data(), static_cast<int>(visible_status.size()));
+
+        if (!search_status_.empty()) {
+            wattron(editor_window_, A_BOLD);
+            const int len = std::min<int>(static_cast<int>(search_status_.size()), width);
+            mvwaddnstr(editor_window_, 0, 0, search_status_.c_str(), len);
+            wattroff(editor_window_, A_BOLD);
+        }
+
+        if (!status_.empty()) {
+            const int status_width = std::min<int>(static_cast<int>(status_.size()), width);
+            const int start = std::max(0, width - status_width);
+            mvwaddnstr(editor_window_, 0, start, status_.c_str(), static_cast<int>(status_.size()));
+        }
         wnoutrefresh(editor_window_);
     }
 }
@@ -693,6 +700,7 @@ void AppUi::open_log_file(const std::string& path) {
     filter_bitmap_ = nullptr;
     search_regex_.reset();
     search_pattern_.clear();
+    search_status_.clear();
     search_matches_ = BitArray();
     log_cursor_ = 0;
     log_top_line_ = 0;
@@ -1121,7 +1129,7 @@ void AppUi::handle_search_submit() {
         search_pattern_.clear();
         search_regex_.reset();
         search_matches_ = BitArray();
-        status_.clear();
+        search_status_.clear();
         return;
     }
 
@@ -1129,7 +1137,7 @@ void AppUi::handle_search_submit() {
         search_regex_ = std::make_unique<boost::regex>(text);
         search_pattern_ = text;
     } catch (const boost::regex_error& e) {
-        status_ = "invalid regex: " + text;
+        search_status_ = "invalid regex: " + text;
         search_active_ = false;
         search_regex_.reset();
         search_pattern_.clear();
@@ -1163,7 +1171,7 @@ void AppUi::handle_search_submit() {
         state->done = true;
     });
 
-    status_ = "searching...";
+    search_status_ = "searching...";
 }
 
 void AppUi::build_search_bitmap() {
@@ -1209,7 +1217,7 @@ void AppUi::poll_search_job() {
     search_job_state_.reset();
 
     const std::size_t match_count = search_matches_.count_ones();
-    status_ = "search: /" + search_pattern_ + "/ matched " + std::to_string(match_count) + " lines";
+    search_status_ = "search: /" + search_pattern_ + "/ matched " + std::to_string(match_count) + " lines";
 
     if (match_count > 0 && !search_matches_.get(log_cursor_)) {
         jump_to_next_match();

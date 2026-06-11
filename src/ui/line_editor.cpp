@@ -173,9 +173,6 @@ void LineEditor::render(WINDOW* window, int width) {
     } else {
         destroy_form();
         werase(window);
-        wattron(window, COLOR_PAIR(2));
-        mvwaddstr(window, 0, 0, "normal");
-        wattroff(window, COLOR_PAIR(2));
         wclrtoeol(window);
     }
     wnoutrefresh(window);

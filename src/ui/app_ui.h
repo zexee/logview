@@ -104,6 +104,7 @@ private:
     bool running_ = true;
     bool dirty_ = true;
     std::string status_;
+    std::string search_status_;
     std::size_t log_cursor_ = 0;
     std::size_t log_top_line_ = 0;
     std::size_t rule_cursor_ = 0;
