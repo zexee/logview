@@ -7,7 +7,7 @@ namespace lv::ui {
 Screen::Screen() {
     std::setlocale(LC_ALL, "");
     initscr();
-    cbreak();
+    raw();
     noecho();
     keypad(stdscr, TRUE);
     timeout(50);

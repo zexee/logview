@@ -46,6 +46,7 @@ LineEditorEvent LineEditor::handle_key(int key) {
         case 3:
             cancel();
             return LineEditorEvent::Canceled;
+        case KEY_LEFT:
             if (cursor_ > 0) {
                 --cursor_;
             }
