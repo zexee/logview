@@ -118,6 +118,7 @@ private:
     std::string search_pattern_;
     std::unique_ptr<boost::regex> search_regex_;
     BitArray search_matches_;
+    BitArray mark_bitmap_;
     std::size_t search_orig_cursor_ = 0;
     std::uint64_t next_filter_generation_ = 1;
     std::uint64_t applied_filter_generation_ = 0;

@@ -250,8 +250,16 @@ void AppUi::render_log() {
 
             if (wrap == 0) {
                 wattron(log_window_, COLOR_PAIR(4));
-                mvwprintw(log_window_, row, 0, "%*zu ", number_width - 1, line_number + 1);
+                mvwprintw(log_window_, row, 0, "%*zu", number_width - 1, line_number + 1);
                 wattroff(log_window_, COLOR_PAIR(4));
+                bool marked = mark_bitmap_.size() > 0 && mark_bitmap_.get(line_number);
+                if (marked) {
+                    wattron(log_window_, COLOR_PAIR(5) | A_BOLD);
+                    waddch(log_window_, 'M');
+                    wattroff(log_window_, COLOR_PAIR(5) | A_BOLD);
+                } else {
+                    waddch(log_window_, ' ');
+                }
             } else {
                 wattron(log_window_, COLOR_PAIR(4));
                 mvwprintw(log_window_, row, 0, "%*s ", number_width - 1, "");
@@ -521,6 +529,37 @@ void AppUi::handle_key(int key) {
             jump_to_previous_match();
         }
         break;
+    case 'm':
+        if (focus_ == Focus::Log && index_.line_count() > 0) {
+            if (mark_bitmap_.size() == 0) {
+                mark_bitmap_.resize(index_.line_count(), false);
+            }
+            mark_bitmap_.set(log_cursor_, !mark_bitmap_.get(log_cursor_));
+        }
+        break;
+    case ',':
+        if (focus_ == Focus::Log && mark_bitmap_.size() > 0) {
+            for (LineNumber c = log_cursor_ > 0 ? log_cursor_ - 1 : index_.line_count() - 1;
+                 ; --c) {
+                if (c == log_cursor_) break;
+                if (mark_bitmap_.get(c)) {
+                    log_cursor_ = c;
+                    break;
+                }
+                if (c == 0) c = index_.line_count();
+            }
+        }
+        break;
+    case '.':
+        if (focus_ == Focus::Log && mark_bitmap_.size() > 0) {
+            for (LineNumber c = log_cursor_ + 1; c < index_.line_count(); ++c) {
+                if (mark_bitmap_.get(c)) {
+                    log_cursor_ = c;
+                    break;
+                }
+            }
+        }
+        break;
     case '[':
         if (focus_ == Focus::Rules) {
             move_selected_rule_up();
@@ -730,6 +769,7 @@ void AppUi::open_log_file(const std::string& path) {
     search_pattern_.clear();
     search_status_.clear();
     search_matches_ = BitArray();
+    mark_bitmap_ = BitArray();
     incsearch_result_.reset();
     log_cursor_ = 0;
     log_top_line_ = 0;
@@ -916,7 +956,6 @@ bool AppUi::poll_filter_jobs() {
                 if (!line_visible(log_cursor_)) {
                     log_cursor_ = previous_visible_line(log_cursor_);
                 }
-                log_top_line_ = log_cursor_;
             }
             changed = true;
         }
@@ -1447,6 +1486,8 @@ void AppUi::render_help() {
         "   Space             toggle filters window",
         "   /                 search (regex), Enter to submit",
         "   n / N             next / previous search match",
+        "   m                 toggle mark on current line",
+        "   , / .             jump to previous / next mark",
         "   ?                 this help",
         "",
         " Rules window (focus with Tab)",
@@ -1528,7 +1569,6 @@ void AppUi::jump_to_next_match() {
             std::string_view sv = index_.line(c);
             if (boost::regex_search(sv.data(), sv.data() + sv.size(), m, *search_regex_)) {
                 log_cursor_ = c;
-                log_top_line_ = c;
                 return;
             }
         }
@@ -1537,7 +1577,6 @@ void AppUi::jump_to_next_match() {
     const LineNumber next = next_search_match(log_cursor_);
     if (next != log_cursor_) {
         log_cursor_ = next;
-        log_top_line_ = log_cursor_;
     }
 }
 
@@ -1553,7 +1592,6 @@ void AppUi::jump_to_previous_match() {
                 std::string_view sv = index_.line(c);
                 if (boost::regex_search(sv.data(), sv.data() + sv.size(), m, *search_regex_)) {
                     log_cursor_ = c;
-                    log_top_line_ = c;
                     return;
                 }
             }
@@ -1565,7 +1603,6 @@ void AppUi::jump_to_previous_match() {
     const LineNumber prev = previous_search_match(log_cursor_);
     if (prev != log_cursor_) {
         log_cursor_ = prev;
-        log_top_line_ = log_cursor_;
     }
 }
 
