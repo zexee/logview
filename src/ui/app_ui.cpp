@@ -728,7 +728,7 @@ void AppUi::handle_command(const std::string& command) {
         save_filtered_file(path);
         return;
     }
-    if (name == "o" || name == "open") {
+    if (name == "o" || name == "open" || name == "e") {
         std::string path;
         input >> path;
         if (path.empty()) {
@@ -1502,6 +1502,8 @@ void AppUi::render_help() {
         " Rule syntax",
         "   s/h  PATTERN    show/hide lines matching PATTERN",
         "   s/h  /regex/    show/hide lines matching regex",
+        "   si/hi /regex/   case-insensitive regex",
+        "   si/hi PATTERN   case-insensitive literal",
         "   s/h  A|B|/C/    OR: mix literal + regex",
         "   sl/hl N [M]      show/hide line N to M (to end)",
         "   sl/hl -N         show/hide last N lines",
@@ -1509,7 +1511,7 @@ void AppUi::render_help() {
         "   -s /...          disable rule (- prefix)",
         "",
         " Commands (type : to enter)",
-        "   :o [file]         open log file (:o alone reloads)",
+        "   :o / :e [file]   open log file (:o / :e alone reloads)",
         "   :w <file>         save filtered lines to file",
         "   :r <file>         load rules from file",
         "   :wr [file]        write rules to file",

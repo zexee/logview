@@ -16,7 +16,8 @@ std::string ltrim(std::string text) {
     return text;
 }
 
-bool parse_rule_operator(const std::string& token, RuleAction* action, bool* is_line_range) {
+bool parse_rule_operator(const std::string& token, RuleAction* action, bool* is_line_range, bool* case_insensitive) {
+    *case_insensitive = false;
     if (token == "sl") {
         *action = RuleAction::Show;
         *is_line_range = true;
@@ -25,6 +26,18 @@ bool parse_rule_operator(const std::string& token, RuleAction* action, bool* is_
     if (token == "hl") {
         *action = RuleAction::Hide;
         *is_line_range = true;
+        return true;
+    }
+    if (token == "si") {
+        *action = RuleAction::Show;
+        *is_line_range = false;
+        *case_insensitive = true;
+        return true;
+    }
+    if (token == "hi") {
+        *action = RuleAction::Hide;
+        *is_line_range = false;
+        *case_insensitive = true;
         return true;
     }
     if (token == "s") {
@@ -152,8 +165,9 @@ RuleParseResult RuleSet::parse_line(const std::string& line) {
 
     RuleAction action = RuleAction::Show;
     bool is_line_range = false;
-    if (!parse_rule_operator(operator_token, &action, &is_line_range)) {
-        return {.ok = false, .error = "expected rule operator 's', 'h', 'sl', or 'hl'"};
+    bool case_insensitive = false;
+    if (!parse_rule_operator(operator_token, &action, &is_line_range, &case_insensitive)) {
+        return {.ok = false, .error = "expected rule operator 's', 'h', 'si', 'hi', 'sl', or 'hl'"};
     }
 
     if (is_line_range) {
@@ -234,7 +248,7 @@ RuleParseResult RuleSet::parse_line(const std::string& line) {
     }
 
     try {
-        auto rule = Rule(action, std::move(segments));
+        auto rule = Rule(action, std::move(segments), case_insensitive);
         rule.set_enabled(enabled);
         return {.ok = true, .rule = std::move(rule), .error = ""};
     } catch (const std::exception& ex) {
