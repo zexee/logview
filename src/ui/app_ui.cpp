@@ -464,7 +464,9 @@ void AppUi::handle_key(int key) {
         }
         break;
     case '?':
-        begin_help();
+        if (focus_ == Focus::Log) {
+            begin_search_backward();
+        }
         break;
     case 4:
         running_ = false;
@@ -670,6 +672,10 @@ void AppUi::handle_command(const std::string& command) {
 
     if (name == "q" || name == "quit") {
         running_ = false;
+        return;
+    }
+    if (name == "h" || name == "help") {
+        begin_help();
         return;
     }
     if (name == "r" || name == "rules") {
@@ -1177,10 +1183,20 @@ std::string AppUi::active_literal_highlight() const {
 
 void AppUi::begin_search() {
     search_active_ = true;
+    search_backward_ = false;
     search_orig_cursor_ = log_cursor_;
     editing_rule_ = false;
     adding_rule_ = false;
     editor_.start("/", "");
+}
+
+void AppUi::begin_search_backward() {
+    search_active_ = true;
+    search_backward_ = true;
+    search_orig_cursor_ = log_cursor_;
+    editing_rule_ = false;
+    adding_rule_ = false;
+    editor_.start("?", "");
 }
 
 void AppUi::handle_search_submit() {
@@ -1266,8 +1282,10 @@ void AppUi::incsearch() {
         incsearch_thread_.detach();
     }
 
+    const bool backward = search_backward_;
+
     incsearch_thread_ = std::thread([result, text = std::move(text), data, data_size, total,
-                                      orig_cursor, gen, filter_bitmap = filter_bitmap_,
+                                      orig_cursor, gen, backward, filter_bitmap = filter_bitmap_,
                                       starts = std::make_shared<std::vector<ByteOffset>>(), 
                                       &starts_ref = index_.starts()]() mutable {
         *starts = starts_ref;
@@ -1277,43 +1295,81 @@ void AppUi::incsearch() {
             re = boost::regex(text);
         } catch (const boost::regex_error&) {
             std::lock_guard<std::mutex> lock(result->mutex);
-            result->status = "/" + text + " [invalid]";
+            result->status = std::string(1, backward ? '?' : '/') + text + " [invalid]";
             result->ready = true;
             return;
         }
 
-        for (LineNumber c = orig_cursor; c < total; ++c) {
-            if (filter_bitmap && !filter_bitmap->get(c)) continue;
-            ByteOffset start = (*starts)[c];
-            ByteOffset end = (c + 1 < starts->size()) ? (*starts)[c + 1] : data_size;
-            std::string_view sv(data + start, end - start);
-            boost::cmatch m;
-            if (boost::regex_search(sv.data(), sv.data() + sv.size(), m, re)) {
-                std::lock_guard<std::mutex> lock(result->mutex);
-                result->cursor = c;
-                result->found = true;
-                result->ready = true;
-                return;
-            }
-        }
+        const std::string prefix(1, backward ? '?' : '/');
 
-        for (LineNumber c = 0; c < orig_cursor; ++c) {
-            if (filter_bitmap && !filter_bitmap->get(c)) continue;
-            ByteOffset start = (*starts)[c];
-            ByteOffset end = (c + 1 < starts->size()) ? (*starts)[c + 1] : data_size;
-            std::string_view sv(data + start, end - start);
-            boost::cmatch m;
-            if (boost::regex_search(sv.data(), sv.data() + sv.size(), m, re)) {
-                std::lock_guard<std::mutex> lock(result->mutex);
-                result->cursor = c;
-                result->found = true;
-                result->ready = true;
-                return;
+        if (backward) {
+            LineNumber c = orig_cursor;
+            while (true) {
+                if (!filter_bitmap || filter_bitmap->get(c)) {
+                    ByteOffset start = (*starts)[c];
+                    ByteOffset end = (c + 1 < starts->size()) ? (*starts)[c + 1] : data_size;
+                    std::string_view sv(data + start, end - start);
+                    boost::cmatch m;
+                    if (boost::regex_search(sv.data(), sv.data() + sv.size(), m, re)) {
+                        std::lock_guard<std::mutex> lock(result->mutex);
+                        result->cursor = c;
+                        result->found = true;
+                        result->ready = true;
+                        return;
+                    }
+                }
+                if (c == 0) break;
+                --c;
+            }
+
+            for (LineNumber c = total - 1; c > orig_cursor; --c) {
+                if (filter_bitmap && !filter_bitmap->get(c)) continue;
+                ByteOffset start = (*starts)[c];
+                ByteOffset end = (c + 1 < starts->size()) ? (*starts)[c + 1] : data_size;
+                std::string_view sv(data + start, end - start);
+                boost::cmatch m;
+                if (boost::regex_search(sv.data(), sv.data() + sv.size(), m, re)) {
+                    std::lock_guard<std::mutex> lock(result->mutex);
+                    result->cursor = c;
+                    result->found = true;
+                    result->ready = true;
+                    return;
+                }
+            }
+        } else {
+            for (LineNumber c = orig_cursor; c < total; ++c) {
+                if (filter_bitmap && !filter_bitmap->get(c)) continue;
+                ByteOffset start = (*starts)[c];
+                ByteOffset end = (c + 1 < starts->size()) ? (*starts)[c + 1] : data_size;
+                std::string_view sv(data + start, end - start);
+                boost::cmatch m;
+                if (boost::regex_search(sv.data(), sv.data() + sv.size(), m, re)) {
+                    std::lock_guard<std::mutex> lock(result->mutex);
+                    result->cursor = c;
+                    result->found = true;
+                    result->ready = true;
+                    return;
+                }
+            }
+
+            for (LineNumber c = 0; c < orig_cursor; ++c) {
+                if (filter_bitmap && !filter_bitmap->get(c)) continue;
+                ByteOffset start = (*starts)[c];
+                ByteOffset end = (c + 1 < starts->size()) ? (*starts)[c + 1] : data_size;
+                std::string_view sv(data + start, end - start);
+                boost::cmatch m;
+                if (boost::regex_search(sv.data(), sv.data() + sv.size(), m, re)) {
+                    std::lock_guard<std::mutex> lock(result->mutex);
+                    result->cursor = c;
+                    result->found = true;
+                    result->ready = true;
+                    return;
+                }
             }
         }
 
         std::lock_guard<std::mutex> lock(result->mutex);
-        result->status = "/" + text + " [not found]";
+        result->status = prefix + text + " [not found]";
         result->ready = true;
     });
 }
@@ -1391,11 +1447,17 @@ void AppUi::poll_search_job() {
 
     search_job_state_.reset();
 
+    const bool backward = search_backward_;
     const std::size_t match_count = search_matches_.count_ones();
-    search_status_ = "search: /" + search_pattern_ + "/ matched " + std::to_string(match_count) + " lines";
+    search_status_ = "search: " + std::string(1, backward ? '?' : '/') + search_pattern_
+                   + (backward ? "? " : "/ ") + "matched " + std::to_string(match_count) + " lines";
 
     if (match_count > 0 && !search_matches_.get(log_cursor_)) {
-        jump_to_next_match();
+        if (backward) {
+            jump_to_previous_match();
+        } else {
+            jump_to_next_match();
+        }
     }
     dirty_ = true;
 }
@@ -1464,7 +1526,6 @@ void AppUi::handle_help_key(int key) {
         help_scroll_ = help_scroll_ > 10 ? help_scroll_ - 10 : 0;
         break;
     case 'q':
-    case '?':
         close_help();
         break;
     }
@@ -1485,10 +1546,8 @@ void AppUi::render_help() {
         "   Tab               switch focus",
         "   Space             toggle filters window",
         "   /                 search (regex), Enter to submit",
+        "   ?                 search backward (regex), Enter to submit",
         "   n / N             next / previous search match",
-        "   m                 toggle mark on current line",
-        "   , / .             jump to previous / next mark",
-        "   ?                 this help",
         "",
         " Rules window (focus with Tab)",
         "   j / k / Up / Down navigate rules",
@@ -1515,6 +1574,7 @@ void AppUi::render_help() {
         "   :w <file>         save filtered lines to file",
         "   :r <file>         load rules from file",
         "   :wr [file]        write rules to file",
+        "   :h / :help       show this help",
         "   :q                quit",
     };
 

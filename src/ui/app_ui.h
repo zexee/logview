@@ -74,6 +74,7 @@ private:
     };
 
     void begin_search();
+    void begin_search_backward();
     void handle_search_submit();
     void incsearch();
     void poll_incsearch();
@@ -115,6 +116,7 @@ private:
     bool editing_rule_ = false;
     bool adding_rule_ = false;
     bool search_active_ = false;
+    bool search_backward_ = false;
     std::string search_pattern_;
     std::unique_ptr<boost::regex> search_regex_;
     BitArray search_matches_;
