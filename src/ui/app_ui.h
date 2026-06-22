@@ -63,6 +63,8 @@ private:
     LineNumber next_visible_line(LineNumber line) const;
     LineNumber previous_visible_line(LineNumber line) const;
     void move_log_page(int direction);
+    void move_log_lines(int direction, int steps);
+    void handle_mouse();
     int line_wrap_rows(LineNumber line, int content_width) const;
     void keep_cursor_visible(int content_width, int content_height);
     int line_number_width() const;

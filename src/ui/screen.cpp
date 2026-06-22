@@ -24,6 +24,8 @@ Screen::Screen() {
     init_pair(3, COLOR_GREEN, -1);
     init_pair(4, COLOR_WHITE, -1);
     init_pair(5, COLOR_RED, -1);
+    // Enable mouse wheel events. BUTTON4 = wheel up, BUTTON5 = wheel down.
+    mousemask(BUTTON4_PRESSED | BUTTON5_PRESSED, nullptr);
 }
 
 Screen::~Screen() {

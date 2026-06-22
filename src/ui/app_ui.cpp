@@ -416,6 +416,10 @@ int AppUi::normalize_key(int key) {
 }
 
 void AppUi::handle_key(int key) {
+    if (key == KEY_MOUSE) {
+        handle_mouse();
+        return;
+    }
     if (help_active_) {
         handle_help_key(key);
         return;
@@ -1061,12 +1065,44 @@ void AppUi::move_log_page(int direction) {
     }
 
     const int steps = std::max(1, log_rect_.height - 2);
+    move_log_lines(direction, steps);
+}
+
+void AppUi::move_log_lines(int direction, int steps) {
+    if (index_.line_count() == 0 || direction == 0 || steps <= 0) {
+        return;
+    }
     for (int i = 0; i < steps; ++i) {
         const LineNumber next = direction > 0 ? next_visible_line(log_cursor_) : previous_visible_line(log_cursor_);
         if (next == log_cursor_) {
             break;
         }
         log_cursor_ = next;
+    }
+}
+
+void AppUi::handle_mouse() {
+    MEVENT event;
+    if (getmouse(&event) != OK) {
+        return;
+    }
+    constexpr int kWheelStep = 3;
+    if (event.bstate & BUTTON4_PRESSED) {
+        if (focus_ == Focus::Rules) {
+            for (int i = 0; i < kWheelStep && rule_cursor_ > 0; ++i) {
+                --rule_cursor_;
+            }
+        } else {
+            move_log_lines(-1, kWheelStep);
+        }
+    } else if (event.bstate & BUTTON5_PRESSED) {
+        if (focus_ == Focus::Rules) {
+            for (int i = 0; i < kWheelStep && rule_cursor_ + 1 < rules_.size(); ++i) {
+                ++rule_cursor_;
+            }
+        } else {
+            move_log_lines(1, kWheelStep);
+        }
     }
 }
 
@@ -1552,6 +1588,7 @@ void AppUi::render_help() {
         "   G / End           last visible line",
         "   PgDn / Ctrl-F     page down",
         "   PgUp / Ctrl-B     page up",
+        "   Mouse wheel       scroll 3 lines (focused window)",
         "   Tab               switch focus",
         "   Space             toggle filters window",
         "   /                 search (regex), Enter to submit",

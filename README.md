@@ -106,6 +106,7 @@ s /user=[0-9]+/
 | `G` / `End` | last visible line |
 | `PgDn` / `Ctrl-F` | page down |
 | `PgUp` / `Ctrl-B` | page up |
+| `Mouse wheel` | scroll 3 lines (focused window) |
 | `Tab` | switch focus to rules |
 | `Space` | show filters window (auto-focus) |
 | `/` | incremental regex search |
