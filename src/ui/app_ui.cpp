@@ -99,7 +99,13 @@ int AppUi::run() {
                 key = normalize_key(key);
                 handle_key(key);
             }
-            if (!editor_.active()) continue;
+            if (!editor_.active()) {
+                // Editor just closed (submit/cancel/command). Force a redraw so
+                // side effects like :open, :rules, :help are visible without an
+                // extra keystroke.
+                dirty_ = true;
+                continue;
+            }
             render_editor();
             doupdate();
             continue;
