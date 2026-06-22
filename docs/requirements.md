@@ -17,21 +17,32 @@
 依赖：
 
 - C++20 编译器
-- CMake
-- `ncursesw`
-- `formw`
+- CMake ≥ 3.16
+- Boost.Regex（静态链接）
+- Linux: ncurses 6.5 widec（CMake 自动从源码构建，不需要系统安装）
+- Windows (MSVC): PDCursesMod（CMake FetchContent 自动拉取）+ vcpkg 提供的 Boost.Regex
 
-构建：
+构建（Linux）：
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
+构建（Windows，MSVC + vcpkg）：
+
+```powershell
+vcpkg install boost-regex:x64-windows
+cmake -B build -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake
+cmake --build build --config Release
+```
+
 运行：
 
 ```bash
-./build/lv <log_file> [rule_file]
+./build/lv <log_file> [rule_file]                          # Linux
+.\build\Release\lv.exe <log_file> [rule_file]               # Windows
 ```
 
 示例：
@@ -53,19 +64,24 @@ cmake --build build
 规则文件每行一条规则，空行和 `#` 开头的行会被忽略。
 
 ```text
-s REGEX       # show regex
-h REGEX       # hide regex
-ss LITERAL    # show literal
-hh LITERAL    # hide literal
+s  PATTERN     # show (默认 literal，/regex/ 切到正则)
+h  PATTERN     # hide
+si PATTERN     # show，大小写不敏感
+hi PATTERN     # hide，大小写不敏感
+sl N [M]       # show 第 N 到 M 行（1-based；负数表示倒数；省略 M 表示到末尾）
+hl N [M]       # hide 同上
+-PATTERN       # 前缀 - 表示禁用该规则
+A|B|C          # | 分隔多段，OR 关系
 ```
 
 示例：
 
 ```text
-ss ERROR
-hh DEBUG
-s user=[0-9]+
+s ERROR
+h DEBUG
+si /user=[0-9]+/
 h TRACE|VERBOSE
+sl -10           # 只看最后 10 行
 ```
 
 规则按顺序组成 pipeline：
@@ -115,7 +131,7 @@ bit 含义：
 
 - 非编辑状态左侧显示 `normal`。
 - 状态信息右对齐显示。
-- 编辑状态使用 `ncurses formw` 作为底层编辑控件。
+- 编辑状态由 `LineEditor` 手写实现（不再使用 `formw`），支持 UTF-8 多字节输入。
 - 支持左右移动、Home/End、插入、删除、Backspace、Insert 模式、`Ctrl-U` 清行。
 - 支持历史记录，上下方向键切换历史。
 
@@ -200,16 +216,17 @@ Screen
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | `BitArray` | `src/core/bit_array.*` | 紧凑位图，底层为 `std::vector<uint64_t>` |
-| `MMapFile` | `src/core/mmap_file.*` | mmap 文件读取 |
+| `MMapFile` | `src/core/mmap_file.*` | mmap 文件读取；`#ifdef _WIN32` 切换 POSIX mmap 与 Win32 `CreateFileMappingW` |
 | `LineIndex` | `src/core/line_index.*` | 行起止位置索引，返回 `std::string_view` |
-| `Rule` | `src/core/rule.*` | 单条 show/hide + regex/literal 规则 |
+| `path_util` | `src/core/path_util.*` | `~` 展开、UTF-8 ↔ `std::filesystem::path` 转换 |
+| `Rule` | `src/core/rule.*` | 单条 show/hide + literal/regex/linerange 规则 |
 | `RuleSet` | `src/core/rule_set.*` | 规则解析、保存、增删改移 |
 | `FilterEngine` | `src/core/filter_engine.*` | 按行执行规则 pipeline |
 | `FilterResult` | `src/core/filter_result.*` | 中间 layer bitmaps 和 final bitmap |
-| `Screen` | `src/ui/screen.*` | ncurses 初始化和终端尺寸 |
-| `LineEditor` | `src/ui/line_editor.*` | 基于 formw 的底部行编辑器 |
+| `Screen` | `src/ui/screen.*` | ncurses/PDCursesMod 初始化和终端尺寸 |
+| `LineEditor` | `src/ui/line_editor.*` | 手写底部行编辑器，支持 UTF-8 多字节输入 |
 | `AppUi` | `src/ui/app_ui.*` | 窗口布局、输入分发、渲染、后台过滤任务 |
-| `main` | `src/main.cpp` | 解析启动参数、打开文件、启动 UI |
+| `main` | `src/main.cpp` | 解析启动参数、打开文件、启动 UI；Linux 用 `main`，Windows 用 `wmain`（wide argv → UTF-8 → 共用 `run(argc, argv)`） |
 
 ## 后台过滤模型
 
@@ -275,11 +292,11 @@ Screen
 ## 已知限制
 
 - regex 高亮范围未实现；当前只高亮 literal 规则的匹配文本。
-- 滚动是按“可见文件行”移动，不是严格按换行后的屏幕行移动。
+- 滚动是按"可见文件行"移动，不是严格按换行后的屏幕行移动。
 - 后台过滤不支持取消，只通过 generation 忽略旧结果。
 - 过滤结果没有增量复用；规则变化后会重新计算完整结果。
-- 规则语法不支持大小写选项、prefix/suffix、反向组合表达式等扩展。
-- `LineEditor` 使用 `formw`，适合嵌入 ncurses 窗口；没有使用 readline/libedit，因为它们通常接管整个终端输入。
+- 规则语法不支持 prefix/suffix/contains 等扩展（case-insensitive 已通过 `si`/`hi` 支持）。
+- `LineEditor` 为手写实现（不再依赖 `formw`/readline/libedit），UTF-8 多字节输入通过逐字节拼接。
 - 当前没有独立的 view model/display buffer 抽象，log 渲染和可见行导航仍在 `AppUi` 内。
 
 ## 后续建议
@@ -294,9 +311,8 @@ Screen
 
 优先级中等：
 
-1. 支持大小写不敏感规则。
-2. 支持 prefix/suffix/contains 的更明确语法。
-3. 支持命令补全和规则历史分类。
+1. 支持 prefix/suffix/contains 的更明确语法。
+2. 支持命令补全和规则历史分类。
 4. 支持状态栏展示当前行号、过滤数量、规则数量、过滤中状态。
 
 ## 开发注意事项

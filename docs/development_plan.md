@@ -7,19 +7,21 @@
 已完成：
 
 - 核心过滤模块。
-- mmap 文件读取和行索引。
+- mmap 文件读取和行索引（POSIX mmap + Win32 CreateFileMapping 双路径）。
 - 每规则中间 bit array 和 final bit array。
 - 按行 pipeline 过滤语义。
-- 单元测试和性能测试。
-- ncurses TUI 基础框架。
+- 单元测试和性能测试（去掉 POSIX API，改用 `<filesystem>` + `<fstream>`）。
+- ncurses/PDCursesMod 双 backend 的 TUI 框架。
 - log/rules/editor 三段式界面。
 - log 窗口真实显示、行号、长行换行、当前行高亮。
 - final bitmap 过滤显示。
 - 后台过滤线程和 UI 主线程分离。
 - rules 窗口编辑、插入、删除、移动。
 - 命令模式打开文件、载入/保存规则、保存过滤结果。
-- 基于 `formw` 的底部行编辑器和历史记录。
+- 手写底部行编辑器（不再依赖 `formw`），支持 UTF-8 多字节输入和历史记录。
 - Vim 风格 log 浏览快捷键。
+- `~` 展开、UTF-8 ↔ filesystem::path 转换（跨平台共用，支持中文路径）。
+- GitHub Actions CI matrix（Linux + Windows）。
 
 未完成或待优化：
 
@@ -67,9 +69,9 @@
 
 说明：
 
-- `Screen` 管理 ncurses 生命周期。
+- `Screen` 管理 ncurses/PDCursesMod 生命周期（`#ifdef _WIN32` 切换头文件，Windows 上跳过 `set_escdelay`）。
 - `AppUi` 管理窗口布局、输入分发、后台过滤。
-- `LineEditor` 基于 `formw`，嵌入底部一行。
+- `LineEditor` 手写实现（不再用 `formw`），嵌入底部一行；UTF-8 多字节输入通过逐字节拼接。
 
 ### 阶段 3：窗口渲染和显示 buffer
 
@@ -137,7 +139,7 @@
 
 - 增加 TUI 端到端测试，覆盖常用快捷键、命令和行编辑行为。
 - 修复所有可复现显示问题。
-- 确保窗口 resize 后布局和 form 子窗口始终正确。
+- 确保窗口 resize 后布局始终正确（Windows 上需主动调用 `resize_term`）。
 
 ### P1：过滤性能和交互体验
 
@@ -155,7 +157,6 @@
 
 ### P3：规则语言扩展
 
-- 大小写不敏感选项。
 - prefix/suffix/contains 快捷语法。
 - 规则启用/禁用。
 - 规则分组和注释保留。
@@ -190,5 +191,7 @@
 
 - `cats_tigerie.exe-20260604T091233.log` 当前是未跟踪本地文件，不属于项目源码。
 - `build/` 被 `.gitignore` 忽略。
-- core 层保持无 UI 依赖。
-- UI 层依赖 `ncursesw` 和 `formw`。
+- core 层保持无 UI 依赖；也不能 include ncurses/PDCursesMod 头文件。
+- UI 层在 Linux 依赖 `ncursesw`；Windows 依赖 PDCursesMod（`PDC_WIDE=Y PDC_UTF8=Y`）。
+- 所有文件路径在代码内部以 UTF-8 `std::string` 流转；`MMapFile::open` 在 Windows 内部转 UTF-16 后调 wide Win32 API。
+- `mvwaddnstr` 的 `int n` 参数在两个 backend 上语义不同（ncurses 按字符，PDCursesMod 按字节），统一通过 `utf8_byte_at_column` 计算字节数。

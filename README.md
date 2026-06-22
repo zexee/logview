@@ -21,20 +21,36 @@
 
 ## Build | 编译
 
-Requirements | 依赖: cmake, C++20 compiler, Boost.Regex (statically linked)
+Requirements | 依赖: cmake ≥ 3.16, C++20 compiler, Boost.Regex (statically linked).
+
+TUI library is fetched automatically:
+- Linux: ncurses 6.5 (widec), built from source via CMake `ExternalProject`
+- Windows: PDCursesMod (win32 console, wide/UTF-8), fetched via `FetchContent`
+
+### Linux
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-ncurses is downloaded and built from source via `ExternalProject` — no system ncurses required.
-ncurses 通过 ExternalProject 从源码下载编译，不需要系统安装 ncurses。
+### Windows (MSVC + vcpkg)
+
+```powershell
+vcpkg install boost-regex:x64-windows
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake
+cmake --build build --config Release
+```
+
+PDCursesMod is downloaded and built automatically. `/utf-8` is enabled so the
+source and runtime strings stay UTF-8; `wmain` + `SetConsoleOutputCP(CP_UTF8)`
+make non-ASCII file paths work end-to-end.
 
 ## Run | 运行
 
 ```bash
-./build/lv <log_file> [rule_file]
+./build/lv <log_file> [rule_file]          # Linux
+.\build\Release\lv.exe <log_file> [rule_file]   # Windows
 ```
 
 ## Tests | 测试

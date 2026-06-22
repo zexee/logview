@@ -2,14 +2,18 @@
 #include "core/filter_engine.h"
 #include "core/line_index.h"
 #include "core/mmap_file.h"
+#include "core/path_util.h"
 #include "core/rule_set.h"
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <fcntl.h>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <random>
+#include <sstream>
 #include <string>
-#include <unistd.h>
 
 namespace {
 
@@ -40,37 +44,35 @@ int failed = 0;
     } while (false)
 
 std::string temp_path(const char* prefix) {
-    std::string pattern = std::string("/tmp/") + prefix + "_XXXXXX";
-    std::vector<char> buffer(pattern.begin(), pattern.end());
-    buffer.push_back('\0');
-    int fd = ::mkstemp(buffer.data());
-    if (fd < 0) {
-        std::perror("mkstemp");
-        std::exit(1);
+    static std::random_device rd;
+    static std::mt19937_64 gen(rd());
+    std::uniform_int_distribution<std::uint64_t> dist;
+
+    const auto base = std::filesystem::temp_directory_path();
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        std::ostringstream name;
+        name << prefix << "_" << std::hex << dist(gen);
+        const auto candidate = base / name.str();
+        if (!std::filesystem::exists(candidate)) {
+            return lv::to_utf8(candidate);
+        }
     }
-    ::close(fd);
-    return buffer.data();
+    std::fprintf(stderr, "temp_path: could not allocate unique name\n");
+    std::exit(1);
 }
 
 std::string write_temp_file(const std::string& content) {
-    std::string path = temp_path("lv_test");
-    int fd = ::open(path.c_str(), O_WRONLY | O_TRUNC);
-    if (fd < 0) {
+    const std::string path = temp_path("lv_test");
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) {
         std::perror("open");
         std::exit(1);
     }
-    const char* data = content.data();
-    std::size_t remaining = content.size();
-    while (remaining > 0) {
-        ssize_t written = ::write(fd, data, remaining);
-        if (written <= 0) {
-            std::perror("write");
-            std::exit(1);
-        }
-        data += written;
-        remaining -= static_cast<std::size_t>(written);
+    out.write(content.data(), static_cast<std::streamsize>(content.size()));
+    if (!out) {
+        std::perror("write");
+        std::exit(1);
     }
-    ::close(fd);
     return path;
 }
 
@@ -83,7 +85,8 @@ lv::FilterResult run_filter(const std::string& content, const lv::RuleSet& rules
     lv::FilterEngine engine;
     lv::FilterResult result = engine.run(index, rules);
     file.close();
-    ::unlink(path.c_str());
+    std::error_code ec;
+    std::filesystem::remove(std::filesystem::u8path(path), ec);
     return result;
 }
 
@@ -115,7 +118,8 @@ void test_line_index_trailing_newline() {
     CHECK(index.line(1) == "b");
     CHECK(index.line(2) == "c");
     file.close();
-    ::unlink(path.c_str());
+    std::error_code ec;
+    std::filesystem::remove(std::filesystem::u8path(path), ec);
 }
 
 void test_line_index_no_trailing_newline() {
@@ -127,7 +131,8 @@ void test_line_index_no_trailing_newline() {
     CHECK_EQ(index.line_count(), 3);
     CHECK(index.line(2) == "c");
     file.close();
-    ::unlink(path.c_str());
+    std::error_code ec;
+    std::filesystem::remove(std::filesystem::u8path(path), ec);
 }
 
 void test_line_index_empty_file() {
@@ -138,7 +143,8 @@ void test_line_index_empty_file() {
     CHECK(index.build(file));
     CHECK_EQ(index.line_count(), 0);
     file.close();
-    ::unlink(path.c_str());
+    std::error_code ec;
+    std::filesystem::remove(std::filesystem::u8path(path), ec);
 }
 
 void test_parse_rule() {
@@ -202,7 +208,8 @@ void test_ruleset_save_load() {
     CHECK_EQ(loaded.size(), 2);
     CHECK(loaded[0].serialize() == "s ERROR");
     CHECK(loaded[1].serialize() == "h /DEBUG|TRACE/");
-    ::unlink(path.c_str());
+    std::error_code ec;
+    std::filesystem::remove(std::filesystem::u8path(path), ec);
 }
 
 void test_ruleset_mutation() {

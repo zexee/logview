@@ -1,0 +1,55 @@
+name: build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Boost
+        run: sudo apt-get update && sudo apt-get install -y libboost-regex-dev
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Run filter tests
+        run: ./build/test_filter_engine
+
+      - name: Run line editor tests
+        run: ./build/test_line_editor
+
+      - name: Perf smoke
+        run: ./build/perf_filter_engine test_log.txt tests/perf_rules.txt
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Boost (vcpkg)
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitDate: 2024-07-01
+
+      - name: Install boost-regex
+        run: vcpkg install boost-regex:x64-windows
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+
+      - name: Build
+        run: cmake --build build -j --config Release
+
+      - name: Run filter tests
+        run: .\build\Release\test_filter_engine.exe
+
+      - name: Run line editor tests
+        run: .\build\Release\test_line_editor.exe

@@ -1,14 +1,9 @@
 #include "ui/line_editor.h"
 
 #include <algorithm>
-#include <cctype>
-#include <cstring>
+#include <string_view>
 
 namespace lv::ui {
-
-LineEditor::~LineEditor() {
-    destroy_form();
-}
 
 void LineEditor::start(std::string prompt, std::string text) {
     active_ = true;
@@ -16,9 +11,7 @@ void LineEditor::start(std::string prompt, std::string text) {
     text_ = std::move(text);
     cursor_ = text_.size();
     history_index_ = history_.size();
-    if (form_ != nullptr) {
-        set_field_text(text_);
-    }
+    reset_pending_utf8();
 }
 
 void LineEditor::cancel() {
@@ -27,7 +20,7 @@ void LineEditor::cancel() {
     text_.clear();
     cursor_ = 0;
     history_index_ = history_.size();
-    destroy_form();
+    reset_pending_utf8();
 }
 
 LineEditorEvent LineEditor::handle_key(int key) {
@@ -35,106 +28,45 @@ LineEditorEvent LineEditor::handle_key(int key) {
         return LineEditorEvent::None;
     }
 
-    if (form_ == nullptr) {
-        switch (key) {
-        case 10:
-        case KEY_ENTER:
-            commit_history();
-            active_ = false;
-            return LineEditorEvent::Submitted;
-        case 27:
-        case 3:
-            cancel();
-            return LineEditorEvent::Canceled;
-        case KEY_LEFT:
-            if (cursor_ > 0) {
-                --cursor_;
-            }
-            break;
-        case KEY_RIGHT:
-            if (cursor_ < text_.size()) {
-                ++cursor_;
-            }
-            break;
-        case KEY_HOME:
-            cursor_ = 0;
-            break;
-        case KEY_END:
-            cursor_ = text_.size();
-            break;
-        case KEY_BACKSPACE:
-        case 127:
-        case 8:
-            fallback_backspace();
-            break;
-        case KEY_DC:
-            fallback_delete();
-            break;
-        case KEY_UP:
-            history_previous();
-            break;
-        case KEY_DOWN:
-            history_next();
-            break;
-        default:
-            if (key >= 32 && key <= 126) {
-                fallback_insert(static_cast<char>(key));
-            }
-            break;
+    if (pending_utf8_expected_ > 0) {
+        // Mid-sequence: only trailing bytes are valid input here.
+        if (!feed_pending_utf8(key)) {
+            // Malformed input: drop pending bytes and reprocess this key.
+            reset_pending_utf8();
+        } else {
+            return LineEditorEvent::None;
         }
-        return LineEditorEvent::None;
     }
 
     switch (key) {
     case 10:
     case KEY_ENTER:
-        form_driver(form_, REQ_VALIDATION);
-        sync_text_from_field();
         commit_history();
         active_ = false;
-        destroy_form();
         return LineEditorEvent::Submitted;
-    case 27:
-    case 3:
+    case 27:  // ESC
+    case 3:   // Ctrl-C
         cancel();
         return LineEditorEvent::Canceled;
     case KEY_LEFT:
-        if (cursor_ > 0) {
-            --cursor_;
-            sync_form_cursor();
-        }
+        cursor_left();
         break;
     case KEY_RIGHT:
-        sync_text_from_field();
-        if (cursor_ < text_.size()) {
-            ++cursor_;
-            sync_form_cursor();
-        }
+        cursor_right();
         break;
     case KEY_HOME:
         cursor_ = 0;
-        sync_form_cursor();
         break;
     case KEY_END:
-        sync_text_from_field();
         cursor_ = text_.size();
-        sync_form_cursor();
         break;
     case KEY_BACKSPACE:
     case 127:
     case 8:
-        if (cursor_ > 0) {
-            form_driver(form_, REQ_DEL_PREV);
-            --cursor_;
-        }
+        backspace_char();
         break;
     case KEY_DC:
-        if (cursor_ < text_.size()) {
-            form_driver(form_, REQ_DEL_CHAR);
-        }
-        break;
-    case KEY_IC:
-        form_driver(form_, REQ_INS_MODE);
+        delete_char();
         break;
     case KEY_UP:
         history_previous();
@@ -142,141 +74,94 @@ LineEditorEvent LineEditor::handle_key(int key) {
     case KEY_DOWN:
         history_next();
         break;
-    case 21:
-        form_driver(form_, REQ_BEG_LINE);
-        form_driver(form_, REQ_CLR_EOL);
-        cursor_ = 0;
+    case 21:  // Ctrl-U: clear line
+        clear_line();
         break;
     default:
-        if (key >= 32 && key <= 126) {
-            form_driver(form_, key);
-            ++cursor_;
+        if (key >= 0x80 && key <= 0xFF) {
+            // UTF-8 lead byte; assemble trailing bytes via feed_pending_utf8().
+            pending_utf8_.clear();
+            pending_utf8_.push_back(static_cast<char>(key));
+            if ((key & 0xE0) == 0xC0) {
+                pending_utf8_expected_ = 2;
+            } else if ((key & 0xF0) == 0xE0) {
+                pending_utf8_expected_ = 3;
+            } else if ((key & 0xF8) == 0xF0) {
+                pending_utf8_expected_ = 4;
+            } else {
+                pending_utf8_expected_ = 0;
+            }
+            if (pending_utf8_expected_ == static_cast<int>(pending_utf8_.size())) {
+                insert_bytes(pending_utf8_.data(), pending_utf8_.size());
+                reset_pending_utf8();
+            } else if (pending_utf8_expected_ == 0) {
+                // Invalid lead byte: insert as a single byte so input makes progress.
+                insert_bytes(pending_utf8_.data(), 1);
+                reset_pending_utf8();
+            }
+        } else if (key >= 32 && key <= 126) {
+            const char ch = static_cast<char>(key);
+            insert_bytes(&ch, 1);
         }
         break;
     }
-
-    sync_text_from_field();
-    cursor_ = std::min(cursor_, text_.size());
     return LineEditorEvent::None;
 }
 
-void LineEditor::render(WINDOW* window, int width) {
-    if (active_) {
-        const bool needs_rebuild = form_ == nullptr || bound_window_ != window || bound_width_ != width ||
-                                   bound_prompt_width_ != static_cast<int>(prompt_.size());
-        if (needs_rebuild) {
-            werase(window);
-        }
-        ensure_form(window, width);
-        wattron(window, A_BOLD);
-        mvwaddstr(window, 0, 0, prompt_.c_str());
-        wattroff(window, A_BOLD);
-        pos_form_cursor(form_);
-    } else {
-        destroy_form();
-        werase(window);
-        wclrtoeol(window);
+bool LineEditor::feed_pending_utf8(int key) {
+    if (key < 0x80 || key > 0xFF) {
+        return false;
     }
-    wnoutrefresh(window);
+    pending_utf8_.push_back(static_cast<char>(key));
+    if (pending_utf8_.size() >= static_cast<std::size_t>(pending_utf8_expected_)) {
+        insert_bytes(pending_utf8_.data(), pending_utf8_.size());
+        reset_pending_utf8();
+    }
+    return true;
 }
 
-void LineEditor::ensure_form(WINDOW* window, int width) {
-    const int prompt_width = static_cast<int>(prompt_.size());
-    const int next_field_width = std::max(1, width - prompt_width);
-    if (form_ != nullptr && bound_window_ == window && bound_width_ == width && bound_prompt_width_ == prompt_width &&
-        field_width_ == next_field_width) {
-        return;
-    }
-
-    destroy_form();
-    bound_window_ = window;
-    bound_width_ = width;
-    bound_prompt_width_ = prompt_width;
-    field_width_ = next_field_width;
-
-    field_window_ = derwin(window, 1, field_width_, 0, prompt_width);
-    fields_[0] = new_field(1, field_width_, 0, 0, 0, 0);
-    fields_[1] = nullptr;
-    set_field_opts(fields_[0], O_VISIBLE | O_PUBLIC | O_EDIT | O_ACTIVE);
-    set_max_field(fields_[0], 4096);
-    set_field_back(fields_[0], A_NORMAL);
-
-    form_ = new_form(fields_);
-    set_form_win(form_, window);
-    set_form_sub(form_, field_window_);
-    post_form(form_);
-    set_field_text(text_);
+void LineEditor::reset_pending_utf8() {
+    pending_utf8_.clear();
+    pending_utf8_expected_ = 0;
 }
 
-void LineEditor::destroy_form() {
-    if (form_ != nullptr) {
-        unpost_form(form_);
-        free_form(form_);
-        form_ = nullptr;
-    }
-    if (fields_[0] != nullptr) {
-        free_field(fields_[0]);
-        fields_[0] = nullptr;
-    }
-    if (field_window_ != nullptr) {
-        delwin(field_window_);
-        field_window_ = nullptr;
-    }
-    fields_[1] = nullptr;
-    bound_window_ = nullptr;
-    bound_width_ = 0;
-    bound_prompt_width_ = 0;
-    field_width_ = 0;
+void LineEditor::insert_bytes(const char* data, std::size_t n) {
+    text_.insert(cursor_, data, n);
+    cursor_ += n;
 }
 
-void LineEditor::set_field_text(const std::string& text) {
-    text_ = text;
-    cursor_ = text_.size();
-    if (fields_[0] == nullptr) {
-        return;
-    }
-    set_field_buffer(fields_[0], 0, text_.c_str());
-    sync_form_cursor();
-}
-
-void LineEditor::sync_text_from_field() {
-    if (fields_[0] == nullptr) {
-        return;
-    }
-    form_driver(form_, REQ_VALIDATION);
-    text_ = trim_field_buffer(field_buffer(fields_[0], 0), cursor_);
-    cursor_ = std::min(cursor_, text_.size());
-}
-
-void LineEditor::sync_form_cursor() {
-    if (form_ == nullptr) {
-        return;
-    }
-    form_driver(form_, REQ_BEG_LINE);
-    const std::size_t moves = std::min(cursor_, text_.size());
-    for (std::size_t i = 0; i < moves; ++i) {
-        form_driver(form_, REQ_RIGHT_CHAR);
-    }
-}
-
-void LineEditor::fallback_insert(char ch) {
-    text_.insert(text_.begin() + static_cast<std::ptrdiff_t>(cursor_), ch);
-    ++cursor_;
-}
-
-void LineEditor::fallback_backspace() {
+void LineEditor::backspace_char() {
     if (cursor_ == 0) {
         return;
     }
-    text_.erase(text_.begin() + static_cast<std::ptrdiff_t>(cursor_ - 1));
-    --cursor_;
+    const std::size_t w = utf8_char_width_at(text_, cursor_ - 1);
+    text_.erase(cursor_ - w, w);
+    cursor_ -= w;
 }
 
-void LineEditor::fallback_delete() {
+void LineEditor::delete_char() {
     if (cursor_ >= text_.size()) {
         return;
     }
-    text_.erase(text_.begin() + static_cast<std::ptrdiff_t>(cursor_));
+    const std::size_t w = utf8_char_width_at(text_, cursor_);
+    text_.erase(cursor_, w);
+}
+
+void LineEditor::cursor_left() {
+    if (cursor_ > 0) {
+        cursor_ -= utf8_char_width_at(text_, cursor_ - 1);
+    }
+}
+
+void LineEditor::cursor_right() {
+    if (cursor_ < text_.size()) {
+        cursor_ += utf8_char_width_at(text_, cursor_);
+    }
+}
+
+void LineEditor::clear_line() {
+    text_.clear();
+    cursor_ = 0;
 }
 
 void LineEditor::commit_history() {
@@ -297,7 +182,8 @@ void LineEditor::history_previous() {
     if (history_index_ > 0) {
         --history_index_;
     }
-    set_field_text(history_[history_index_]);
+    text_ = history_[history_index_];
+    cursor_ = text_.size();
 }
 
 void LineEditor::history_next() {
@@ -306,27 +192,66 @@ void LineEditor::history_next() {
     }
     if (history_index_ + 1 < history_.size()) {
         ++history_index_;
-        set_field_text(history_[history_index_]);
+        text_ = history_[history_index_];
     } else {
         history_index_ = history_.size();
-        set_field_text("");
+        text_.clear();
     }
+    cursor_ = text_.size();
 }
 
-std::string LineEditor::trim_field_buffer(const char* buffer, std::size_t cursor_pos) {
-    if (buffer == nullptr) {
-        return {};
+std::size_t LineEditor::utf8_char_width_at(std::string_view text, std::size_t byte_offset) {
+    if (byte_offset >= text.size()) {
+        return 0;
     }
-    std::string text(buffer);
-    std::size_t last_non_ws = text.size();
-    while (last_non_ws > 0 && std::isspace(static_cast<unsigned char>(text[last_non_ws - 1]))) {
-        --last_non_ws;
+    const unsigned char c = static_cast<unsigned char>(text[byte_offset]);
+    if (c < 0x80) return 1;
+    if ((c & 0xE0) == 0xC0) return 2;
+    if ((c & 0xF0) == 0xE0) return 3;
+    if ((c & 0xF8) == 0xF0) return 4;
+    // Invalid lead byte; advance one byte so the cursor makes progress.
+    return 1;
+}
+
+void LineEditor::render(WINDOW* window, int width) {
+    if (window == nullptr) {
+        return;
     }
-    std::size_t keep = std::max(cursor_pos, last_non_ws);
-    if (keep < text.size()) {
-        text.resize(keep);
+
+    werase(window);
+
+    if (active_) {
+        const int prompt_width = std::min<int>(static_cast<int>(prompt_.size()),
+                                               std::max(0, width));
+        if (prompt_width > 0) {
+            wattron(window, A_BOLD);
+            mvwaddnstr(window, 0, 0, prompt_.c_str(), prompt_width);
+            wattroff(window, A_BOLD);
+        }
+
+        const int field_width = std::max(1, width - prompt_width);
+
+        // Horizontal scroll: keep cursor visible when text exceeds the field.
+        std::size_t view_start = 0;
+        if (cursor_ > static_cast<std::size_t>(field_width)) {
+            view_start = cursor_ - field_width;
+        }
+        const std::size_t available = text_.size() > view_start
+                                          ? text_.size() - view_start
+                                          : 0;
+        const std::size_t view_len = std::min(available, static_cast<std::size_t>(field_width));
+        if (view_len > 0) {
+            mvwaddnstr(window, 0, prompt_width,
+                       text_.data() + view_start,
+                       static_cast<int>(view_len));
+        }
+
+        const int cursor_x = prompt_width + static_cast<int>(cursor_ - view_start);
+        wmove(window, 0, cursor_x);
     }
-    return text;
+
+    wclrtoeol(window);
+    wnoutrefresh(window);
 }
 
 } // namespace lv::ui

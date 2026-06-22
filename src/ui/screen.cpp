@@ -11,7 +11,11 @@ Screen::Screen() {
     noecho();
     keypad(stdscr, TRUE);
     timeout(50);
+#if !defined(_WIN32)
     set_escdelay(0);
+#else
+    // PDCursesMod has no set_escdelay; ESC handling differs and doesn't need it.
+#endif
     curs_set(1);
     start_color();
     use_default_colors();

@@ -1,8 +1,12 @@
 #pragma once
 
-#include <form.h>
+#if defined(_WIN32)
+#include <curses.h>
+#else
 #include <ncurses.h>
+#endif
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -16,7 +20,10 @@ enum class LineEditorEvent {
 
 class LineEditor {
 public:
-    ~LineEditor();
+    LineEditor() = default;
+    ~LineEditor() = default;
+    LineEditor(const LineEditor&) = delete;
+    LineEditor& operator=(const LineEditor&) = delete;
 
     void start(std::string prompt, std::string text = {});
     void cancel();
@@ -29,18 +36,18 @@ public:
     std::size_t history_size() const { return history_.size(); }
 
 private:
-    void ensure_form(WINDOW* window, int width);
-    void destroy_form();
-    void set_field_text(const std::string& text);
-    void sync_text_from_field();
-    void sync_form_cursor();
-    void fallback_insert(char ch);
-    void fallback_backspace();
-    void fallback_delete();
+    void insert_bytes(const char* data, std::size_t n);
+    void backspace_char();
+    void delete_char();
+    void cursor_left();
+    void cursor_right();
+    void clear_line();
     void commit_history();
     void history_previous();
     void history_next();
-    static std::string trim_field_buffer(const char* buffer, std::size_t cursor_pos);
+    void reset_pending_utf8();
+    bool feed_pending_utf8(int key);
+    static std::size_t utf8_char_width_at(std::string_view text, std::size_t byte_offset);
 
     bool active_ = false;
     std::string prompt_;
@@ -48,13 +55,10 @@ private:
     std::size_t cursor_ = 0;
     std::vector<std::string> history_;
     std::size_t history_index_ = 0;
-    FIELD* fields_[2] = {nullptr, nullptr};
-    FORM* form_ = nullptr;
-    WINDOW* bound_window_ = nullptr;
-    WINDOW* field_window_ = nullptr;
-    int bound_width_ = 0;
-    int bound_prompt_width_ = 0;
-    int field_width_ = 0;
+
+    // Multi-byte UTF-8 sequence being assembled from successive getch() bytes.
+    std::string pending_utf8_;
+    int pending_utf8_expected_ = 0;
 };
 
 } // namespace lv::ui

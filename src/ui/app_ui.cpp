@@ -1,6 +1,7 @@
 #include "ui/app_ui.h"
 
 #include "core/filter_engine.h"
+#include "core/path_util.h"
 
 #include <algorithm>
 #include <chrono>
@@ -194,7 +195,10 @@ void AppUi::render_log() {
     const int title_width = std::min<int>(log_rect_.width, static_cast<int>(path.size()));
     if (title_width > 0) {
         const int title_x = std::max(0, (log_rect_.width - title_width) / 2);
-        mvwaddnstr(log_window_, 0, title_x, path.c_str(), title_width);
+        // title_width is a column budget; convert to bytes so UTF-8 paths
+        // don't overflow the layout or split a codepoint on Windows.
+        const std::size_t title_bytes = utf8_byte_at_column(path, title_width);
+        mvwaddnstr(log_window_, 0, title_x, path.c_str(), static_cast<int>(title_bytes));
     }
     if (focus_ == Focus::Log && !editor_.active()) {
         wattroff(log_window_, COLOR_PAIR(1));
@@ -337,15 +341,22 @@ void AppUi::render_editor() {
 
         if (!search_status_.empty()) {
             wattron(editor_window_, A_BOLD);
-            const int len = std::min<int>(static_cast<int>(search_status_.size()), width);
-            mvwaddnstr(editor_window_, 0, 0, search_status_.c_str(), len);
+            const std::size_t len = utf8_byte_at_column(search_status_, width);
+            mvwaddnstr(editor_window_, 0, 0, search_status_.c_str(), static_cast<int>(len));
             wattroff(editor_window_, A_BOLD);
         }
 
         if (!status_.empty()) {
-            const int status_width = std::min<int>(static_cast<int>(status_.size()), width);
-            const int start = std::max(0, width - status_width);
-            mvwaddnstr(editor_window_, 0, start, status_.c_str(), static_cast<int>(status_.size()));
+            // Status is right-aligned to width; convert display width to bytes
+            // for the same UTF-8 safety as above.
+            const int status_cols = utf8_display_width(status_);
+            const int visible_cols = std::min<int>(status_cols, width);
+            const int start_col = std::max(0, width - visible_cols);
+            const std::size_t skip_bytes = utf8_byte_at_column(status_, width - visible_cols);
+            const std::size_t keep_bytes = utf8_byte_at_column(status_, width) - skip_bytes;
+            mvwaddnstr(editor_window_, 0, start_col,
+                       status_.c_str() + skip_bytes,
+                       static_cast<int>(keep_bytes));
         }
         wnoutrefresh(editor_window_);
     }
@@ -425,6 +436,13 @@ void AppUi::handle_key(int key) {
 
     switch (key) {
     case KEY_RESIZE:
+#if defined(_WIN32)
+        // PDCursesMod does not auto-resize; pull the new size explicitly so
+        // getmaxyx() on recreate_windows() sees the updated geometry.
+        if (is_termresized()) {
+            resize_term(0, 0);
+        }
+#endif
         recreate_windows();
         break;
     case ' ':
@@ -651,21 +669,6 @@ void AppUi::handle_editor_submit() {
 }
 
 void AppUi::handle_command(const std::string& command) {
-    auto expand_path = [](std::string path) -> std::string {
-        if (!path.empty() && path[0] == '~') {
-            const char* home = std::getenv("HOME");
-            if (home != nullptr) {
-                if (path.size() == 1) {
-                    return std::string(home);
-                }
-                if (path[1] == '/') {
-                    return std::string(home) + path.substr(1);
-                }
-            }
-        }
-        return path;
-    };
-
     std::istringstream input(command);
     std::string name;
     input >> name;
@@ -685,7 +688,7 @@ void AppUi::handle_command(const std::string& command) {
             status_ = "usage: :r <rule_file>";
             return;
         }
-        path = expand_path(path);
+        path = lv::to_utf8(lv::expand_path(path));
         std::string error;
         RuleSet loaded;
         if (!loaded.load(path, &error)) {
@@ -706,7 +709,7 @@ void AppUi::handle_command(const std::string& command) {
         std::string path;
         input >> path;
         if (!path.empty()) {
-            path = expand_path(path);
+            path = lv::to_utf8(lv::expand_path(path));
         } else {
             path = rule_path_;
         }
@@ -730,7 +733,7 @@ void AppUi::handle_command(const std::string& command) {
             status_ = "usage: :w <output_file>";
             return;
         }
-        path = expand_path(path);
+        path = lv::to_utf8(lv::expand_path(path));
         save_filtered_file(path);
         return;
     }
@@ -744,7 +747,7 @@ void AppUi::handle_command(const std::string& command) {
             status_ = "no file to reload";
             return;
         }
-        path = expand_path(path);
+        path = lv::to_utf8(lv::expand_path(path));
         open_log_file(path);
         return;
     }
@@ -1613,7 +1616,7 @@ void AppUi::render_help() {
         }
         const std::string& text = lines[line_idx];
         const int max_len = popup_w - 3;
-        const int len = std::min<int>(static_cast<int>(text.size()), max_len);
+        const std::size_t len = utf8_byte_at_column(text, max_len);
         mvwaddnstr(help_window_, i + 1, 1, text.c_str(), len);
     }
 
