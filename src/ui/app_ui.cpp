@@ -293,7 +293,7 @@ void AppUi::render_log() {
         const char* label = " Filters ";
         const int label_len = 9;
         const int left_len = (log_rect_.width - label_len) / 2;
-        const int line_y = log_rect_.height;
+        const int line_y = log_rect_.y + log_rect_.height;
         wattron(stdscr, COLOR_PAIR(4));
         if (left_len > 0) {
             mvwhline(stdscr, line_y, 0, ACS_HLINE, left_len);

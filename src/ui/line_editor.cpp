@@ -40,6 +40,7 @@ LineEditorEvent LineEditor::handle_key(int key) {
 
     switch (key) {
     case 10:
+    case 13:
     case KEY_ENTER:
         commit_history();
         active_ = false;

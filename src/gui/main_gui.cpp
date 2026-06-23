@@ -110,6 +110,23 @@ int run(int argc, char** argv) {
     pdc_gl_context = gl_context;
     pdc_no_swap = 1;
 
+    // PDCursesMod computes LINES/COLS from its compile-time defaults (80x25)
+    // and only recomputes on a KEY_RESIZE event triggered by SDL_WINDOWEVENT.
+    // Push a synthetic WINDOWEVENT_SIZE_CHANGED so the first getch() delivers
+    // KEY_RESIZE and the cell grid fills the actual window from the start.
+    {
+        SDL_Event ev;
+        SDL_zero(ev);
+        ev.type = SDL_WINDOWEVENT;
+        ev.window.event = SDL_WINDOWEVENT_SIZE_CHANGED;
+        int ww, wh;
+        SDL_GetWindowSize(window, &ww, &wh);
+        ev.window.data1 = ww;
+        ev.window.data2 = wh;
+        ev.window.windowID = SDL_GetWindowID(window);
+        SDL_PushEvent(&ev);
+    }
+
     // ---- ImGui init ---------------------------------------------------------
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
