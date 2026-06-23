@@ -9,8 +9,10 @@
 //     through PDCursesMod's internal event handler.
 
 #include "ui/app_ui.h"
+#include "core/config.h"
 
 #include <SDL.h>
+#include <SDL_ttf.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -23,12 +25,48 @@ extern "C" {
 // OpenGL context instead of creating its own.
 extern SDL_Window* pdc_window;
 extern SDL_GLContext pdc_gl_context;
+
+// Font metrics — set before initscr() to control the initial cell size.
+extern int pdc_font_size;
+extern TTF_Font* pdc_ttffont;
+extern int pdc_fheight, pdc_fwidth;
 }
 
 namespace {
 
 void usage(const char* program) {
     std::fprintf(stderr, "Usage: %s <log_file> [rule_file]\n", program);
+}
+
+void adjust_font(lv::ui::AppUi& app_ui, int delta) {
+    if (pdc_font_size <= 0) pdc_font_size = 18;
+    pdc_font_size = std::max(6, std::min(72, pdc_font_size + delta));
+
+    if (pdc_ttffont) {
+        TTF_CloseFont(pdc_ttffont);
+        pdc_ttffont = nullptr;
+    }
+
+    const char* fname = std::getenv("PDC_FONT");
+    if (fname) pdc_ttffont = TTF_OpenFont(fname, pdc_font_size);
+    if (!pdc_ttffont) {
+#ifdef _WIN32
+        fname = "C:/Windows/Fonts/consola.ttf";
+#elif __APPLE__
+        fname = "/System/Library/Fonts/Menlo.ttc";
+#else
+        fname = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf";
+#endif
+        pdc_ttffont = TTF_OpenFont(fname, pdc_font_size);
+    }
+    if (pdc_ttffont) {
+        TTF_SetFontKerning(pdc_ttffont, 0);
+        TTF_SetFontHinting(pdc_ttffont, TTF_HINTING_MONO);
+        TTF_SizeText(pdc_ttffont, "W", &pdc_fwidth, &pdc_fheight);
+    }
+
+    lv::save_font_size(pdc_font_size);
+    app_ui.rebuild_layout();
 }
 
 int run(int argc, char** argv) {
@@ -96,6 +134,12 @@ int run(int argc, char** argv) {
     pdc_window = window;
     pdc_gl_context = gl_context;
 
+    // Restore the saved font size from ~/.config/lv/config.yaml.
+    {
+        const int saved = lv::load_font_size();
+        if (saved > 0) pdc_font_size = saved;
+    }
+
     // Push a synthetic resize event so KEY_RESIZE fires and the cell grid
     // fills the window from the first frame instead of using 80x25 defaults.
     {
@@ -121,18 +165,30 @@ int run(int argc, char** argv) {
         // ---- Main loop ------------------------------------------------------
         bool running = true;
         while (running) {
-            // PDCursesMod's GL backend processes SDL events through its
-            // getch() -> PDC_check_key -> SDL_PollEvent chain.
-            running = app_ui.tick();
-
-            // Drain SDL_QUIT events.
+            // Intercept Ctrl+= / Ctrl+- for font size adjustment.
+            SDL_PumpEvents();
             SDL_Event ev;
             while (SDL_PollEvent(&ev)) {
                 if (ev.type == SDL_QUIT) {
                     running = false;
                     quit_requested = true;
+                } else if (ev.type == SDL_KEYDOWN &&
+                           (ev.key.keysym.mod & KMOD_CTRL)) {
+                    if (ev.key.keysym.sym == SDLK_EQUALS ||
+                        ev.key.keysym.sym == SDLK_PLUS) {
+                        adjust_font(app_ui, +1);
+                        continue;
+                    }
+                    if (ev.key.keysym.sym == SDLK_MINUS) {
+                        adjust_font(app_ui, -1);
+                        continue;
+                    }
                 }
+                SDL_PushEvent(&ev);
             }
+
+            // PDCursesMod processes SDL events through its getch() chain.
+            running = app_ui.tick();
         }
     }
 

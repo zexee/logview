@@ -29,6 +29,7 @@ public:
     void start();          // one-time init (recreate_windows + start_filter_job)
     bool tick();           // advance the event loop once; returns false when run should exit
     void prefill_command(const std::string& cmd);
+    void rebuild_layout(); // resize + recreate windows (e.g. after font size change)
 
 private:
     enum class Focus {

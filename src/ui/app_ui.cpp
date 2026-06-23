@@ -213,6 +213,12 @@ void AppUi::prefill_command(const std::string& cmd) {
     dirty_ = true;
 }
 
+void AppUi::rebuild_layout() {
+    resize_term(0, 0);
+    recreate_windows();
+    dirty_ = true;
+}
+
 void AppUi::recreate_windows() {
     destroy_windows();
 #if defined(LV_USE_PDCURSES)

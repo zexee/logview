@@ -79,6 +79,7 @@ endif()
 
 add_library(lv_core
     src/core/bit_array.cpp
+    src/core/config.cpp
     src/core/filter_engine.cpp
     src/core/filter_result.cpp
     src/core/line_index.cpp
