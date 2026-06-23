@@ -74,6 +74,9 @@ std::size_t utf8_byte_at_column(std::string_view sv, int col) {
 static void pdc_flush(WINDOW* log_win, WINDOW* rules_win, WINDOW* editor_win,
                        const Rect& log_r, const Rect& rules_r, const Rect& editor_r,
                        bool rules_visible) {
+    extern WINDOW* curscr;
+    if (::curscr == nullptr) return;
+
     werase(stdscr);
     if (log_win != nullptr && log_win != stdscr) {
         copywin(log_win, stdscr, 0, 0,
@@ -96,8 +99,10 @@ static void pdc_flush(WINDOW* log_win, WINDOW* rules_win, WINDOW* editor_win,
                 editor_r.x + editor_r.width - 1,
                 FALSE);
     }
-    clearok(stdscr, TRUE);
-    wrefresh(stdscr);
+    // Blit all of stdscr onto curscr, then force a full-screen redraw.
+    copywin(stdscr, ::curscr, 0, 0, 0, 0, LINES - 1, COLS - 1, FALSE);
+    clearok(::curscr, TRUE);
+    doupdate();
 }
 #endif
 
@@ -446,9 +451,7 @@ void AppUi::render_editor() {
                 ? filter_bitmap_->count_ones() : total;
             std::snprintf(buf, sizeof(buf), "%zu/%zu  line %zu",
                           visible, total, log_cursor_ + 1);
-            const int len = static_cast<int>(std::strlen(buf));
-            const int start = std::max(0, width - len);
-            mvwaddstr(editor_window_, 0, start, buf);
+            mvwaddstr(editor_window_, 0, 50, buf);
         }
         wnoutrefresh(editor_window_);
     }
