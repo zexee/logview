@@ -421,19 +421,16 @@ void AppUi::render_editor() {
     if (!editor_.active()) {
         const int width = std::max(1, editor_rect_.width);
 
+        // Left side: search status (bold) if active.
         if (!search_status_.empty()) {
             wattron(editor_window_, A_BOLD);
             const std::size_t len = utf8_byte_at_column(search_status_, width);
             mvwaddnstr(editor_window_, 0, 0, search_status_.c_str(), static_cast<int>(len));
             wattroff(editor_window_, A_BOLD);
-        } else {
-            // Show the mode indicator on the left when no search is active.
-            mvwaddnstr(editor_window_, 0, 0, "normal", 6);
         }
 
+        // Right side: transient status or default line/cursor info.
         if (!status_.empty()) {
-            // Status is right-aligned to width; convert display width to bytes
-            // for the same UTF-8 safety as above.
             const int status_cols = utf8_display_width(status_);
             const int visible_cols = std::min<int>(status_cols, width);
             const int start_col = std::max(0, width - visible_cols);
@@ -443,15 +440,15 @@ void AppUi::render_editor() {
                        status_.c_str() + skip_bytes,
                        static_cast<int>(keep_bytes));
         } else {
-            // No transient status — show persistent info: cursor position
-            // and visible / total line count.
             char buf[128];
             std::size_t total = index_.line_count();
             std::size_t visible = (filter_bitmap_ != nullptr)
                 ? filter_bitmap_->count_ones() : total;
             std::snprintf(buf, sizeof(buf), "%zu/%zu  line %zu",
                           visible, total, log_cursor_ + 1);
-            mvwaddstr(editor_window_, 0, width - static_cast<int>(std::strlen(buf)), buf);
+            const int len = static_cast<int>(std::strlen(buf));
+            const int start = std::max(0, width - len);
+            mvwaddnstr(editor_window_, 0, start, buf, len);
         }
         wnoutrefresh(editor_window_);
     }
