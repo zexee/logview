@@ -426,6 +426,9 @@ void AppUi::render_editor() {
             const std::size_t len = utf8_byte_at_column(search_status_, width);
             mvwaddnstr(editor_window_, 0, 0, search_status_.c_str(), static_cast<int>(len));
             wattroff(editor_window_, A_BOLD);
+        } else {
+            // Show the mode indicator on the left when no search is active.
+            mvwaddnstr(editor_window_, 0, 0, "normal", 6);
         }
 
         if (!status_.empty()) {
@@ -439,6 +442,16 @@ void AppUi::render_editor() {
             mvwaddnstr(editor_window_, 0, start_col,
                        status_.c_str() + skip_bytes,
                        static_cast<int>(keep_bytes));
+        } else {
+            // No transient status — show persistent info: cursor position
+            // and visible / total line count.
+            char buf[128];
+            std::size_t total = index_.line_count();
+            std::size_t visible = (filter_bitmap_ != nullptr)
+                ? filter_bitmap_->count_ones() : total;
+            std::snprintf(buf, sizeof(buf), "%zu/%zu  line %zu",
+                          visible, total, log_cursor_ + 1);
+            mvwaddstr(editor_window_, 0, width - static_cast<int>(std::strlen(buf)), buf);
         }
         wnoutrefresh(editor_window_);
     }
