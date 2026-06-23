@@ -5,6 +5,8 @@
 //   - SDL2 creates the window with an OpenGL 3.3 context.
 //   - PDCursesMod's gl backend attaches to the same window via pdc_window
 //     and renders the TUI through the OpenGL context.
+//   - An SDL event filter intercepts Ctrl+=/- before they reach PDCursesMod's
+//     internal SDL_PollEvent, adjusting the font size.
 //   - AppUi::tick() is driven once per frame; its getch() pumps SDL events
 //     through PDCursesMod's internal event handler.
 
@@ -20,13 +22,8 @@
 #include <vector>
 
 extern "C" {
-// PDCursesMod gl backend exports pdc_window and pdc_gl_context; we set both
-// before initscr() so PDCurses attaches to our SDL window and shares our
-// OpenGL context instead of creating its own.
 extern SDL_Window* pdc_window;
 extern SDL_GLContext pdc_gl_context;
-
-// Font metrics — set before initscr() to control the initial cell size.
 extern int pdc_font_size;
 extern TTF_Font* pdc_ttffont;
 extern int pdc_fheight, pdc_fwidth;
@@ -38,7 +35,12 @@ void usage(const char* program) {
     std::fprintf(stderr, "Usage: %s <log_file> [rule_file]\n", program);
 }
 
-void adjust_font(lv::ui::AppUi& app_ui, int delta) {
+struct GuiState {
+    lv::ui::AppUi* app_ui = nullptr;
+    bool quit = false;
+};
+
+void adjust_font_now(lv::ui::AppUi& app_ui, int delta) {
     if (pdc_font_size <= 0) pdc_font_size = 18;
     pdc_font_size = std::max(6, std::min(72, pdc_font_size + delta));
 
@@ -67,6 +69,28 @@ void adjust_font(lv::ui::AppUi& app_ui, int delta) {
 
     lv::save_font_size(pdc_font_size);
     app_ui.rebuild_layout();
+}
+
+// SDL event filter — runs before SDL_PollEvent returns to any caller.
+// Intercept Ctrl+=/- here so PDCursesMod's internal SDL_PollEvent never
+// sees them.
+static int SDLCALL event_filter(void* userdata, SDL_Event* event) {
+    auto* state = static_cast<GuiState*>(userdata);
+    if (event->type == SDL_QUIT) {
+        state->quit = true;
+    }
+    if (event->type == SDL_KEYDOWN && (event->key.keysym.mod & KMOD_CTRL)) {
+        if (event->key.keysym.sym == SDLK_EQUALS ||
+            event->key.keysym.sym == SDLK_PLUS) {
+            if (state->app_ui) adjust_font_now(*state->app_ui, +1);
+            return 0;  // drop
+        }
+        if (event->key.keysym.sym == SDLK_MINUS) {
+            if (state->app_ui) adjust_font_now(*state->app_ui, -1);
+            return 0;  // drop
+        }
+    }
+    return 1;  // keep
 }
 
 int run(int argc, char** argv) {
@@ -134,14 +158,13 @@ int run(int argc, char** argv) {
     pdc_window = window;
     pdc_gl_context = gl_context;
 
-    // Restore the saved font size from ~/.config/lv/config.yaml.
+    // Restore the saved font size.
     {
         const int saved = lv::load_font_size();
         if (saved > 0) pdc_font_size = saved;
     }
 
-    // Push a synthetic resize event so KEY_RESIZE fires and the cell grid
-    // fills the window from the first frame instead of using 80x25 defaults.
+    // Push a synthetic resize event for first-frame sizing.
     {
         SDL_Event ev;
         SDL_zero(ev);
@@ -155,65 +178,27 @@ int run(int argc, char** argv) {
         SDL_PushEvent(&ev);
     }
 
-    // ---- AppUi (does initscr() internally on construction of Screen) -------
-    bool quit_requested = false;
+    // ---- AppUi --------------------------------------------------------------
     {
         lv::ui::AppUi app_ui(std::move(file), std::move(index), std::move(rules),
                              rules_path.empty() ? "" : rules_path);
         app_ui.start();
 
+        GuiState gui_state;
+        gui_state.app_ui = &app_ui;
+        SDL_SetEventFilter(event_filter, &gui_state);
+
         // ---- Main loop ------------------------------------------------------
-        bool running = true;
-        while (running) {
-            // Intercept Ctrl+= / Ctrl+- without draining the SDL event
-            // queue.  PDCursesMod's getch() -> SDL_PollEvent processes
-            // mouse and keyboard events on its own schedule; we only
-            // peek at keyboard events for the font shortcut and consume
-            // them when they match.
-            SDL_PumpEvents();
-            SDL_Event peek;
-            while (SDL_PeepEvents(&peek, 1, SDL_PEEKEVENT,
-                                  SDL_KEYDOWN, SDL_KEYDOWN) > 0) {
-                if (peek.key.keysym.mod & KMOD_CTRL) {
-                    bool match = false;
-                    if (peek.key.keysym.sym == SDLK_EQUALS ||
-                        peek.key.keysym.sym == SDLK_PLUS) {
-                        adjust_font(app_ui, +1);
-                        match = true;
-                    } else if (peek.key.keysym.sym == SDLK_MINUS) {
-                        adjust_font(app_ui, -1);
-                        match = true;
-                    }
-                    if (match) {
-                        SDL_Event dummy;
-                        SDL_PeepEvents(&dummy, 1, SDL_GETEVENT,
-                                       SDL_KEYDOWN, SDL_KEYDOWN);
-                        continue;
-                    }
-                }
-                break;
-            }
-
-            // Also peek at SDL_QUIT without consuming non-quit events.
-            SDL_Event quit_ev;
-            if (SDL_PeepEvents(&quit_ev, 1, SDL_GETEVENT,
-                               SDL_QUIT, SDL_QUIT) > 0) {
-                running = false;
-                quit_requested = true;
-            }
-
-            if (!running) break;
-
-            // PDCursesMod processes SDL events through its getch() chain.
-            running = app_ui.tick();
+        while (!gui_state.quit && app_ui.tick()) {
+            // tick() handles its own SDL event processing via getch().
         }
     }
 
     // ---- Cleanup ------------------------------------------------------------
+    SDL_SetEventFilter(nullptr, nullptr);
     SDL_GL_DeleteContext(gl_context);
     SDL_DestroyWindow(window);
     SDL_Quit();
-    (void)quit_requested;
     return 0;
 }
 
