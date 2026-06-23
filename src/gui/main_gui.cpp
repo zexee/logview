@@ -130,6 +130,16 @@ int run(int argc, char** argv) {
         // ---- Main loop ------------------------------------------------------
         bool running = true;
         while (running) {
+            // Drive the TUI one tick first. PDCursesMod's GL backend calls
+            // SDL_PollEvent internally during getch(); letting it run before
+            // ImGui's event processing ensures keyboard events reach the TUI
+            // line editor / normal-mode navigation instead of being consumed
+            // by ImGui_ImplSDL2_ProcessEvent.
+            running = app_ui.tick();
+
+            // Feed remaining SDL events to ImGui (mouse clicks on the menu
+            // bar, window resize, etc.). PDCursesMod's getch() only drains
+            // keyboard events from the queue, so mouse events survive.
             SDL_Event event;
             while (SDL_PollEvent(&event) != 0) {
                 ImGui_ImplSDL2_ProcessEvent(&event);
@@ -138,11 +148,6 @@ int run(int argc, char** argv) {
                     quit_requested = true;
                 }
             }
-
-            // Drive the TUI one tick. PDCursesMod's gl backend pumps SDL
-            // events internally during getch(); to avoid double-pump, we let
-            // ImGui see events first then AppUi::tick() pulls the next input.
-            running = app_ui.tick();
 
             // ---- ImGui frame ------------------------------------------------
             ImGui_ImplOpenGL3_NewFrame();

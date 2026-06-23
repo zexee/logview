@@ -26,6 +26,14 @@ Screen::Screen() {
     init_pair(5, COLOR_RED, -1);
     // Enable mouse wheel events. BUTTON4 = wheel up, BUTTON5 = wheel down.
     mousemask(BUTTON4_PRESSED | BUTTON5_PRESSED, nullptr);
+#if defined(LV_USE_PDCURSES)
+    // Make the TUI grid fill the entire SDL2 window. Without this,
+    // PDCursesMod defaults to 80×25 cells at the compile-time font
+    // size, leaving black bars on the right and bottom of a larger
+    // window. resize_term(0, 0) tells curses to query the window
+    // for its current pixel dimensions and compute LINES/COLS.
+    resize_term(0, 0);
+#endif
 }
 
 Screen::~Screen() {

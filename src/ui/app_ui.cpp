@@ -140,8 +140,15 @@ void AppUi::recreate_windows() {
 
     const int rows = std::max(3, screen_.rows());
     const int cols = std::max(20, screen_.cols());
+#if defined(LV_USE_PDCURSES)
+    // The ImGui menu bar covers the first 2 text rows of the SDL2 window.
+    // Offset the TUI layout so the log/rules content starts below the bar.
+    const int top_pad = 2;
+#else
+    const int top_pad = 0;
+#endif
     const int editor_height = 1;
-    const int content_height = rows - editor_height;
+    const int content_height = rows - editor_height - top_pad;
     const int separator_height = (content_height > 3 && rules_visible_) ? 1 : 0;
     const int split_content_height = std::max(1, content_height - separator_height);
     const int rules_height = [&]() -> int {
@@ -154,8 +161,8 @@ void AppUi::recreate_windows() {
     }();
     const int log_height = std::max(1, split_content_height - rules_height);
 
-    log_rect_ = Rect{0, 0, log_height, cols};
-    rules_rect_ = Rect{log_height + separator_height, 0, rules_height, cols};
+    log_rect_ = Rect{top_pad, 0, log_height, cols};
+    rules_rect_ = Rect{log_height + separator_height + top_pad, 0, rules_height, cols};
     editor_rect_ = Rect{rows - 1, 0, editor_height, cols};
 
     log_window_ = newwin(log_rect_.height, log_rect_.width, log_rect_.y, log_rect_.x);
