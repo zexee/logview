@@ -1,0 +1,92 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Boost + GUI deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libboost-regex-dev \
+            libgl1-mesa-dev libglu1-mesa-dev mesa-common-dev \
+            xorg
+
+      - name: Configure (TUI)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build TUI
+        run: cmake --build build -j
+
+      - name: Fetch GUI third-party sources
+        run: ./scripts/bootstrap_third_party.sh
+
+      - name: Configure GUI
+        run: cmake -B build_gui -DCMAKE_BUILD_TYPE=Release -DLV_BUILD_GUI=ON
+
+      - name: Build GUI
+        run: cmake --build build_gui -j --target lv-gui
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp build/lv dist/
+          cp build_gui/lv-gui dist/
+          tar -czf lv-linux-x86_64.tar.gz -C dist .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lv-linux
+          path: lv-linux-x86_64.tar.gz
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Boost (vcpkg)
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitDate: 2024-07-01
+
+      - name: Install boost-regex
+        run: vcpkg install boost-regex:x64-windows
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+
+      - name: Build
+        run: cmake --build build -j --config Release
+
+      - name: Package
+        run: Compress-Archive -Path build\Release\lv.exe -DestinationPath lv-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lv-windows
+          path: lv-windows-x64.zip
+
+  release:
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
