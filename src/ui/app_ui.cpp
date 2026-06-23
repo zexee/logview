@@ -448,7 +448,7 @@ void AppUi::render_editor() {
                           visible, total, log_cursor_ + 1);
             const int len = static_cast<int>(std::strlen(buf));
             const int start = std::max(0, width - len);
-            mvwaddnstr(editor_window_, 0, start, buf, len);
+            mvwaddstr(editor_window_, 0, start, buf);
         }
         wnoutrefresh(editor_window_);
     }
