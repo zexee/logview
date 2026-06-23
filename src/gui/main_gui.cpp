@@ -147,28 +147,39 @@ int run(int argc, char** argv) {
         // ---- Main loop ------------------------------------------------------
         bool running = true;
         while (running) {
-            // Drive the TUI one tick first. PDCursesMod's GL backend calls
-            // SDL_PollEvent internally during getch() to read keyboard/mouse
-            // events. Stronger than ImGui's needs; the TUI must see every
-            // keypress first.
+            // Peek at SDL events and forward mouse / window events to ImGui.
+            // SDL_PEEKEVENT leaves them in the queue so PDCursesMod's
+            // getch() -> SDL_PollEvent also sees them in the next tick().
+            // This makes the ImGui menu bar clickable without stealing
+            // keyboard input from the TUI.
+            SDL_PumpEvents();
+            SDL_Event preview[16];
+            int n = SDL_PeepEvents(preview, 16, SDL_PEEKEVENT,
+                                   SDL_FIRSTEVENT, SDL_LASTEVENT);
+            for (int i = 0; i < n; ++i) {
+                switch (preview[i].type) {
+                case SDL_MOUSEMOTION:
+                case SDL_MOUSEBUTTONDOWN:
+                case SDL_MOUSEBUTTONUP:
+                case SDL_MOUSEWHEEL:
+                case SDL_WINDOWEVENT:
+                    ImGui_ImplSDL2_ProcessEvent(&preview[i]);
+                    break;
+                }
+            }
+
+            // Drive the TUI one tick. PDCursesMod's GL backend owns all
+            // SDL event processing through its getch() chain.
             running = app_ui.tick();
 
-            // PDCursesMod's GL backend processes all SDL events internally
-            // through getch() -> PDC_check_key -> SDL_PollEvent.  The outer
-            // loop MUST NOT drain events from the queue (via SDL_PollEvent
-            // or SDL_PeepEvents with SDL_GETEVENT for keyboard/mouse types),
-            // otherwise the TUI line editor and normal-mode navigation miss
-            // keypresses.  ImGui's menu bar is a static visual; it does not
-            // need interactive event processing.
-            {
-                SDL_Event quit_ev;
-                while (SDL_PeepEvents(
-                           &quit_ev, 1, SDL_GETEVENT,
-                           SDL_QUIT, SDL_QUIT) > 0) {
-                    if (quit_ev.type == SDL_QUIT) {
-                        running = false;
-                        quit_requested = true;
-                    }
+            // Check for SDL_QUIT without touching other event types.
+            SDL_Event quit_ev;
+            while (SDL_PeepEvents(
+                       &quit_ev, 1, SDL_GETEVENT,
+                       SDL_QUIT, SDL_QUIT) > 0) {
+                if (quit_ev.type == SDL_QUIT) {
+                    running = false;
+                    quit_requested = true;
                 }
             }
 
