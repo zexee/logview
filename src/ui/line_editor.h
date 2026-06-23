@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(LV_USE_PDCURSES)
 #include <curses.h>
 #else
 #include <ncurses.h>

@@ -1,0 +1,46 @@
+diff --git a/gl/pdcdisp.c b/gl/pdcdisp.c
+index ad383a6..509bd46 100644
+--- a/gl/pdcdisp.c
++++ b/gl/pdcdisp.c
+@@ -903,7 +903,13 @@ void PDC_doupdate(void)
+         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+     }
+ 
+-    SDL_GL_SwapWindow(pdc_window);
++    /* lv patch: skip the swap when the host wants to draw on top of the back
++     * buffer (e.g. Dear ImGui overlays). The host is responsible for calling
++     * SDL_GL_SwapWindow itself in that case. */
++    if (!pdc_no_swap)
++    {
++        SDL_GL_SwapWindow(pdc_window);
++    }
+ 
+     shrink_glyph_grid();
+ }
+diff --git a/gl/pdcgl.h b/gl/pdcgl.h
+index 4826272..7676a2d 100644
+--- a/gl/pdcgl.h
++++ b/gl/pdcgl.h
+@@ -32,6 +32,10 @@ PDCEX  int pdc_interpolation_mode; /* PDC_GL_INTERPOLATE_BILINEAR by default */
+ PDCEX  SDL_Window *pdc_window;
+ PDCEX  SDL_Surface *pdc_icon;
+ PDCEX  int pdc_sheight, pdc_swidth;
++/* When non-zero, PDC_doupdate() leaves the final SDL_GL_SwapWindow call to
++ * the caller so another OpenGL renderer (e.g. Dear ImGui) can draw on top of
++ * the same back buffer before the swap. */
++PDCEX  int pdc_no_swap;
+ 
+ extern Uint32 *pdc_glyph_cache[4];
+ extern int pdc_glyph_cache_size[4];
+diff --git a/gl/pdcscrn.c b/gl/pdcscrn.c
+index ef222f2..ec389c9 100644
+--- a/gl/pdcscrn.c
++++ b/gl/pdcscrn.c
+@@ -37,6 +37,7 @@ int pdc_glyph_cache_w = 0, pdc_glyph_cache_h = 0;
+ int* pdc_glyph_start_col = NULL;
+ 
+ SDL_Window *pdc_window = NULL;
++int pdc_no_swap = 0;
+ SDL_Surface *pdc_icon = NULL;
+ int pdc_sheight = 0, pdc_swidth = 0;
+ 

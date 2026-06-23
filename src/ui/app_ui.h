@@ -26,6 +26,9 @@ public:
     ~AppUi();
 
     int run();
+    void start();          // one-time init (recreate_windows + start_filter_job)
+    bool tick();           // advance the event loop once; returns false when run should exit
+    void prefill_command(const std::string& cmd);
 
 private:
     enum class Focus {

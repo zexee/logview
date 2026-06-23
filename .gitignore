@@ -1,3 +1,8 @@
 .aider*
 build/
+build_gui/
+sdl2build/
 .cache/
+imgui.ini
+*.deb
+third_party/

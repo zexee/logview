@@ -10,14 +10,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Install Boost
-        run: sudo apt-get update && sudo apt-get install -y libboost-regex-dev
+      - name: Install Boost + GUI deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libboost-regex-dev \
+            libgl1-mesa-dev libglu1-mesa-dev mesa-common-dev \
+            xorg
 
-      - name: Configure
+      - name: Configure (TUI)
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build
+      - name: Build TUI
         run: cmake --build build -j
 
       - name: Run filter tests
@@ -28,6 +34,24 @@ jobs:
 
       - name: Perf smoke
         run: ./build/perf_filter_engine test_log.txt tests/perf_rules.txt
+
+      - name: Fetch GUI third-party sources
+        run: ./scripts/bootstrap_third_party.sh
+
+      - name: Configure GUI
+        run: cmake -B build_gui -DCMAKE_BUILD_TYPE=Release -DLV_BUILD_GUI=ON
+
+      - name: Build GUI
+        run: cmake --build build_gui -j --target lv-gui
+
+      - name: GUI binary exists
+        run: test -x build_gui/lv-gui
+
+      - name: Upload lv-gui binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: lv-gui-linux
+          path: build_gui/lv-gui
 
   windows:
     runs-on: windows-latest

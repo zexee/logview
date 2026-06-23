@@ -80,45 +80,59 @@ AppUi::~AppUi() {
 }
 
 int AppUi::run() {
+    start();
+    while (running_) {
+        tick();
+    }
+    destroy_windows();
+    return 0;
+}
+
+void AppUi::start() {
     recreate_windows();
     start_filter_job();
-    while (running_) {
-        if (poll_filter_jobs()) {
-            dirty_ = true;
-        }
-        poll_search_job();
-        poll_incsearch();
-        if (dirty_) {
-            render();
-            dirty_ = false;
-        }
-        int key = ERR;
-        if (editor_.active()) {
-            key = getch();
-            if (key != ERR) {
-                key = normalize_key(key);
-                handle_key(key);
-            }
-            if (!editor_.active()) {
-                // Editor just closed (submit/cancel/command). Force a redraw so
-                // side effects like :open, :rules, :help are visible without an
-                // extra keystroke.
-                dirty_ = true;
-                continue;
-            }
-            render_editor();
-            doupdate();
-            continue;
-        }
+}
+
+bool AppUi::tick() {
+    if (poll_filter_jobs()) {
+        dirty_ = true;
+    }
+    poll_search_job();
+    poll_incsearch();
+    if (dirty_) {
+        render();
+        dirty_ = false;
+    }
+    int key = ERR;
+    if (editor_.active()) {
         key = getch();
         if (key != ERR) {
             key = normalize_key(key);
             handle_key(key);
-            dirty_ = true;
         }
+        if (!editor_.active()) {
+            // Editor just closed (submit/cancel/command). Force a redraw so
+            // side effects like :open, :rules, :help are visible without an
+            // extra keystroke.
+            dirty_ = true;
+            return running_;
+        }
+        render_editor();
+        doupdate();
+        return running_;
     }
-    destroy_windows();
-    return 0;
+    key = getch();
+    if (key != ERR) {
+        key = normalize_key(key);
+        handle_key(key);
+        dirty_ = true;
+    }
+    return running_;
+}
+
+void AppUi::prefill_command(const std::string& cmd) {
+    editor_.start(":", cmd);
+    dirty_ = true;
 }
 
 void AppUi::recreate_windows() {
@@ -1081,9 +1095,19 @@ void AppUi::move_log_lines(int direction, int steps) {
     }
 }
 
+namespace {
+// ncurses exposes getmouse(MEVENT*); PDCursesMod exposes nc_getmouse(MEVENT*)
+// alongside its traditional getmouse(void). Wrap so call sites are portable.
+#if defined(LV_USE_PDCURSES)
+inline int lv_getmouse(MEVENT* e) { return nc_getmouse(e); }
+#else
+inline int lv_getmouse(MEVENT* e) { return getmouse(e); }
+#endif
+} // namespace
+
 void AppUi::handle_mouse() {
     MEVENT event;
-    if (getmouse(&event) != OK) {
+    if (lv_getmouse(&event) != OK) {
         return;
     }
     constexpr int kWheelStep = 3;

@@ -46,6 +46,31 @@ PDCursesMod is downloaded and built automatically. `/utf-8` is enabled so the
 source and runtime strings stay UTF-8; `wmain` + `SetConsoleOutputCP(CP_UTF8)`
 make non-ASCII file paths work end-to-end.
 
+### Optional GUI binary (lv-gui)
+
+There is also a cross-platform GUI binary that hosts the same TUI inside an
+SDL2 window with an OpenGL context, plus a Dear ImGui menu bar at the top for
+the most common commands. The same `lv_core` / `lv_ui` source is compiled
+against PDCursesMod's GL backend instead of ncurses.
+
+```bash
+# One-time fetch of vendored sources (SDL2, SDL2_ttf, imgui, PDCursesMod)
+./scripts/bootstrap_third_party.sh
+# Optional: --proxy http://your-proxy:port
+
+cmake -B build_gui -DCMAKE_BUILD_TYPE=Release -DLV_BUILD_GUI=ON
+cmake --build build_gui -j --target lv-gui
+./build_gui/lv-gui <log_file> [rule_file]
+```
+
+Dependencies (vendored in `third_party/`, built as static libs):
+- SDL2, SDL2_ttf (with vendored FreeType)
+- Dear ImGui (SDL2 + OpenGL3 backends)
+- PDCursesMod GL backend (with a one-line patch in `third_party_patches/`
+  that adds a `pdc_no_swap` flag so ImGui can draw on top of the TUI)
+
+Both binaries can coexist; `lv` is the TUI build, `lv-gui` is the windowed one.
+
 ## Run | 运行
 
 ```bash

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(lv VERSION 0.1.0 LANGUAGES CXX)
+project(lv VERSION 0.1.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -144,4 +144,105 @@ if(MSVC)
     target_compile_options(perf_filter_engine PRIVATE /utf-8 /W4 /permissive- /O2)
 else()
     target_compile_options(perf_filter_engine PRIVATE -Wall -Wextra -Wpedantic -O2)
+endif()
+
+# ----------------------------------------------------------------------------
+# Optional GUI binary (lv-gui): cross-platform SDL2 window with ImGui menus.
+# Enabled with -DLV_BUILD_GUI=ON. Vendored third-party sources live in
+# third_party/ and are built as static libs.
+# ----------------------------------------------------------------------------
+option(LV_BUILD_GUI "Build the cross-platform GUI binary (SDL2 + ImGui)" OFF)
+
+if(LV_BUILD_GUI)
+    set(LV_THIRDPARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+
+    # ---- SDL2 (static, minimal subsystems) -----------------------------------
+    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC ON CACHE BOOL "" FORCE)
+    set(SDL_TEST OFF CACHE BOOL "" FORCE)
+    set(SDL_AUDIO OFF CACHE BOOL "" FORCE)
+    set(SDL_JOYSTICK OFF CACHE BOOL "" FORCE)
+    set(SDL_HIDAPI OFF CACHE BOOL "" FORCE)
+    set(SDL_HAPTIC OFF CACHE BOOL "" FORCE)
+    set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
+    set(SDL_POWER OFF CACHE BOOL "" FORCE)
+    set(SDL_FILE OFF CACHE BOOL "" FORCE)
+    set(SDL_FILESYSTEM OFF CACHE BOOL "" FORCE)
+    set(SDL_CPUINFO OFF CACHE BOOL "" FORCE)
+    set(SDL_DUMMYAUDIO ON CACHE BOOL "" FORCE)
+    set(SDL_DISKAUDIO OFF CACHE BOOL "" FORCE)
+    # OpenGL is required: PDCursesMod's gl backend uses it, and ImGui's OpenGL3
+    # backend shares the same context.
+    set(SDL_OPENGL ON CACHE BOOL "" FORCE)
+    set(SDL_OPENGLES OFF CACHE BOOL "" FORCE)
+    set(SDL_VULKAN OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${LV_THIRDPARTY_DIR}/SDL2 EXCLUDE_FROM_ALL)
+
+    # ---- SDL2_ttf (static, with vendored FreeType) ---------------------------
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(SDL2TTF_VENDORED ON CACHE BOOL "" FORCE)
+    set(SDL2TTF_SAMPLES OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${LV_THIRDPARTY_DIR}/SDL2_ttf EXCLUDE_FROM_ALL)
+
+    # ---- PDCursesMod OpenGL backend (compiled directly as a static lib) ------
+    # Uses the gl/ backend instead of sdl2/ because the GL backend shares the
+    # SDL2 window's OpenGL context cleanly with Dear ImGui, whereas the sdl2/
+    # backend renders to an SDL_Surface and would conflict with any other
+    # renderer on the same window.
+    file(GLOB PDC_CORE_SRCS ${LV_THIRDPARTY_DIR}/PDCursesMod/pdcurses/*.c)
+    set(PDC_GL_SRCS
+        ${LV_THIRDPARTY_DIR}/PDCursesMod/gl/pdcclip.c
+        ${LV_THIRDPARTY_DIR}/PDCursesMod/gl/pdcdisp.c
+        ${LV_THIRDPARTY_DIR}/PDCursesMod/gl/pdcgetsc.c
+        ${LV_THIRDPARTY_DIR}/PDCursesMod/gl/pdckbd.c
+        ${LV_THIRDPARTY_DIR}/PDCursesMod/gl/pdcscrn.c
+        ${LV_THIRDPARTY_DIR}/PDCursesMod/gl/pdcsetsc.c
+        ${LV_THIRDPARTY_DIR}/PDCursesMod/gl/pdcutil.c
+    )
+    add_library(pdcurses_sdl2 STATIC ${PDC_CORE_SRCS} ${PDC_GL_SRCS})
+    target_include_directories(pdcurses_sdl2 PUBLIC ${LV_THIRDPARTY_DIR}/PDCursesMod)
+    target_compile_definitions(pdcurses_sdl2 PUBLIC PDC_WIDE PDC_FORCE_UTF8 CHTYPE_32)
+    target_link_libraries(pdcurses_sdl2 PUBLIC SDL2_ttf::SDL2_ttf-static SDL2::SDL2-static)
+
+    # ---- Dear ImGui (static, SDL2 + OpenGL3 backends) ------------------------
+    set(IMGUI_DIR ${LV_THIRDPARTY_DIR}/imgui)
+    add_library(imgui STATIC
+        ${IMGUI_DIR}/imgui.cpp
+        ${IMGUI_DIR}/imgui_draw.cpp
+        ${IMGUI_DIR}/imgui_tables.cpp
+        ${IMGUI_DIR}/imgui_widgets.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
+    )
+    target_include_directories(imgui PUBLIC ${IMGUI_DIR} ${IMGUI_DIR}/backends)
+    target_compile_definitions(imgui PUBLIC IMGUI_IMPL_OPENGL_LOADER_GL3W)
+    target_link_libraries(imgui PUBLIC SDL2::SDL2-static)
+
+    # ---- lv_ui_gui: lv_ui recompiled with PDCursesMod backend ----------------
+    add_library(lv_ui_gui STATIC
+        src/ui/app_ui.cpp
+        src/ui/line_editor.cpp
+        src/ui/screen.cpp
+    )
+    target_include_directories(lv_ui_gui PUBLIC src)
+    target_compile_definitions(lv_ui_gui PUBLIC LV_USE_PDCURSES)
+    target_link_libraries(lv_ui_gui PUBLIC lv_core pdcurses_sdl2 Boost::regex)
+    if(MSVC)
+        target_compile_options(lv_ui_gui PRIVATE /utf-8 /W4 /permissive-)
+    else()
+        target_compile_options(lv_ui_gui PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+
+    # ---- lv-gui executable ---------------------------------------------------
+    add_executable(lv-gui
+        src/gui/main_gui.cpp
+        src/gui/menu.cpp
+    )
+    target_include_directories(lv-gui PRIVATE src)
+    target_link_libraries(lv-gui PRIVATE lv_core lv_ui_gui imgui SDL2::SDL2main)
+    if(MSVC)
+        target_compile_options(lv-gui PRIVATE /utf-8 /W4 /permissive-)
+    else()
+        target_compile_options(lv-gui PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
 endif()

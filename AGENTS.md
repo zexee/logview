@@ -30,8 +30,9 @@ Run individual tests:
 
 CMake targets (see `CMakeLists.txt`):
 - **`lv_core`** — `src/core/` — filtering, line indexing, mmap file, bit arrays, `path_util`. Must **not** depend on ncurses. Cross-platform: `mmap_file.cpp` uses `#ifdef _WIN32` to switch between POSIX `mmap` and Win32 `CreateFileMappingW`/`MapViewOfFile`.
-- **`lv_ui`** — `src/ui/` — ncurses/PDCursesMod TUI: windows, line editor (no longer uses `formw`), input dispatch, background filter + search jobs.
+- **`lv_ui`** — `src/ui/` — ncurses/PDCursesMod TUI: windows, line editor (no longer uses `formw`), input dispatch, background filter + search jobs. Compiles twice when `LV_BUILD_GUI=ON`: once against ncurses/PDCursesMod-wincon (for `lv`), once against PDCursesMod GL backend (for `lv-gui`, gated by `-DLV_USE_PDCURSES`).
 - **`lv`** — `src/main.cpp` — wires core + ui together via `AppUi`. Entry point is `main` on Linux and `wmain` on Windows (wide argv → UTF-8 → shared `run(argc, argv)`).
+- **`lv-gui`** (optional, `-DLV_BUILD_GUI=ON`) — `src/gui/` — SDL2 + OpenGL3 window hosting the TUI via PDCursesMod's GL backend, with a Dear ImGui menu bar on top. Built from the same `lv_ui` source via the `lv_ui_gui` library target.
 - `test_filter_engine`, `test_line_editor`, `perf_filter_engine` — under `tests/`.
 
 `src/input/` is empty and unused.
@@ -88,6 +89,8 @@ Full tables in `README.md`:
 - **`std::string_view` for all file data**: never copy lines. `LineIndex` returns views into the mmap'd region.
 - **`active_filter_` owns the bitmap lifetime; `filter_bitmap_` is just a pointer into it** — don't let `filter_bitmap_` outlive the `FilterResult`.
 - **`dirty_` flag**: the UI only redraws when dirty. Avoid calling refresh in a tight loop.
+- **`AppUi::run()` vs `tick()`**: TUI `lv` calls `run()` (blocking). `lv-gui` calls `start()` once then `tick()` once per SDL frame, because the ImGui menu bar drives the rest of the frame.
+- **`pdc_no_swap` patch in `third_party/PDCursesMod/gl/`**: PDCursesMod's GL backend normally calls `SDL_GL_SwapWindow` itself. We patched it (one-line guard in `pdcdisp.c` plus an extern in `pdcgl.h` and definition in `pdcscrn.c`) so `lv-gui` can defer the swap until after ImGui draws. Don't re-vendor PDCursesMod without re-applying the patch.
 - **Path encoding**: file paths flow as UTF-8 `std::string` everywhere; `path_util::expand_path` returns `std::filesystem::path` and `path_util::to_utf8` renders back to UTF-8 bytes. `MMapFile::open` accepts UTF-8 on both platforms and converts to UTF-16 internally on Windows.
 - **`mvwaddnstr` byte budget**: pass byte counts computed via `utf8_byte_at_column`, not raw column counts — PDCursesMod and ncurses disagree on whether `n` is bytes or characters, and Chinese paths can split a codepoint otherwise.
 
