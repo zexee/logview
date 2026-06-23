@@ -1,21 +1,14 @@
 // Entry point for the lv-gui binary: hosts the lv TUI inside an SDL2 window
-// with an OpenGL context. PDCursesMod's GL backend draws the TUI; Dear ImGui
-// draws the menu bar over it.
+// with an OpenGL context. PDCursesMod's GL backend draws the TUI directly.
 //
 // Architecture:
 //   - SDL2 creates the window with an OpenGL 3.3 context.
 //   - PDCursesMod's gl backend attaches to the same window via pdc_window
-//     and renders the TUI through the OpenGL context (background layer).
-//   - ImGui (SDL2 + OpenGL3 backends) draws its menu bar on top.
+//     and renders the TUI through the OpenGL context.
 //   - AppUi::tick() is driven once per frame; its getch() pumps SDL events
 //     through PDCursesMod's internal event handler.
 
-#include "gui/menu.h"
 #include "ui/app_ui.h"
-
-#include <imgui.h>
-#include <imgui_impl_opengl3.h>
-#include <imgui_impl_sdl2.h>
 
 #include <SDL.h>
 
@@ -27,11 +20,9 @@
 extern "C" {
 // PDCursesMod gl backend exports pdc_window and pdc_gl_context; we set both
 // before initscr() so PDCurses attaches to our SDL window and shares our
-// OpenGL context instead of creating its own. pdc_no_swap defers the buffer
-// swap so ImGui can draw on top of the TUI frame.
+// OpenGL context instead of creating its own.
 extern SDL_Window* pdc_window;
 extern SDL_GLContext pdc_gl_context;
-extern int pdc_no_swap;
 }
 
 namespace {
@@ -98,22 +89,15 @@ int run(int argc, char** argv) {
         return 1;
     }
     if (SDL_GL_SetSwapInterval(1) != 0) {
-        // VSync unavailable; not fatal.
         SDL_ClearError();
     }
 
     // ---- Hand the SDL window + GL context to PDCursesMod BEFORE initscr(). ---
-    // PDCursesMod's gl backend checks pdc_window / pdc_gl_context; if non-null,
-    // it attaches to them instead of creating its own. pdc_no_swap defers the
-    // final buffer swap so ImGui can draw on top of the TUI frame.
     pdc_window = window;
     pdc_gl_context = gl_context;
-    pdc_no_swap = 1;
 
-    // PDCursesMod computes LINES/COLS from its compile-time defaults (80x25)
-    // and only recomputes on a KEY_RESIZE event triggered by SDL_WINDOWEVENT.
-    // Push a synthetic WINDOWEVENT_SIZE_CHANGED so the first getch() delivers
-    // KEY_RESIZE and the cell grid fills the actual window from the start.
+    // Push a synthetic resize event so KEY_RESIZE fires and the cell grid
+    // fills the window from the first frame instead of using 80x25 defaults.
     {
         SDL_Event ev;
         SDL_zero(ev);
@@ -127,16 +111,6 @@ int run(int argc, char** argv) {
         SDL_PushEvent(&ev);
     }
 
-    // ---- ImGui init ---------------------------------------------------------
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    (void)io;
-    ImGui::StyleColorsDark();
-    ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
-    ImGui_ImplOpenGL3_Init("#version 330");
-
     // ---- AppUi (does initscr() internally on construction of Screen) -------
     bool quit_requested = false;
     {
@@ -147,61 +121,22 @@ int run(int argc, char** argv) {
         // ---- Main loop ------------------------------------------------------
         bool running = true;
         while (running) {
-            // Let ImGui see all SDL events first so its menu bar can
-            // react to mouse clicks. Keyboard events that ImGui does not
-            // consume are pushed back into the queue for PDCursesMod's
-            // getch() -> SDL_PollEvent chain in the next tick().
+            // PDCursesMod's GL backend processes SDL events through its
+            // getch() -> PDC_check_key -> SDL_PollEvent chain.
+            running = app_ui.tick();
+
+            // Drain SDL_QUIT events.
             SDL_Event ev;
             while (SDL_PollEvent(&ev)) {
-                bool imgui_wants = ImGui_ImplSDL2_ProcessEvent(&ev);
                 if (ev.type == SDL_QUIT) {
                     running = false;
                     quit_requested = true;
-                } else if (ev.type == SDL_KEYDOWN || ev.type == SDL_KEYUP ||
-                           ev.type == SDL_TEXTINPUT) {
-                    // Push keyboard events back so PDCursesMod sees them.
-                    // Mouse and window events stay consumed by ImGui.
-                    SDL_PushEvent(&ev);
-                }
-                (void)imgui_wants;
-            }
-
-            // Drive the TUI one tick.
-            running = app_ui.tick();
-
-            // Double-check for SDL_QUIT that may have been pushed back.
-            SDL_Event quit_ev;
-            while (SDL_PeepEvents(
-                       &quit_ev, 1, SDL_GETEVENT,
-                       SDL_QUIT, SDL_QUIT) > 0) {
-                if (quit_ev.type == SDL_QUIT) {
-                    running = false;
-                    quit_requested = true;
                 }
             }
-
-            // ---- ImGui frame ------------------------------------------------
-            ImGui_ImplOpenGL3_NewFrame();
-            ImGui_ImplSDL2_NewFrame();
-            ImGui::NewFrame();
-            lv::gui::render_main_menu(&app_ui);
-            ImGui::EndFrame();
-            ImGui::Render();
-
-            // ---- Compose final frame ---------------------------------------
-            // PDCursesMod's gl backend rendered during tick(); ImGui draws
-            // on top of the same OpenGL context.
-            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-            SDL_GL_SwapWindow(window);
         }
-        // AppUi destructor runs here (before SDL teardown): destroys windows,
-        // calls endwin() which detaches PDCursesMod from the SDL window.
     }
 
     // ---- Cleanup ------------------------------------------------------------
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
-    ImGui::DestroyContext();
     SDL_GL_DeleteContext(gl_context);
     SDL_DestroyWindow(window);
     SDL_Quit();

@@ -147,7 +147,7 @@ else()
 endif()
 
 # ----------------------------------------------------------------------------
-# Optional GUI binary (lv-gui): cross-platform SDL2 window with ImGui menus.
+# Optional GUI binary (lv-gui): cross-platform SDL2 window.
 # Enabled with -DLV_BUILD_GUI=ON. Vendored third-party sources live in
 # third_party/ and are built as static libs.
 # ----------------------------------------------------------------------------
@@ -185,10 +185,6 @@ if(LV_BUILD_GUI)
     add_subdirectory(${LV_THIRDPARTY_DIR}/SDL2_ttf EXCLUDE_FROM_ALL)
 
     # ---- PDCursesMod OpenGL backend (compiled directly as a static lib) ------
-    # Uses the gl/ backend instead of sdl2/ because the GL backend shares the
-    # SDL2 window's OpenGL context cleanly with Dear ImGui, whereas the sdl2/
-    # backend renders to an SDL_Surface and would conflict with any other
-    # renderer on the same window.
     file(GLOB PDC_CORE_SRCS ${LV_THIRDPARTY_DIR}/PDCursesMod/pdcurses/*.c)
     set(PDC_GL_SRCS
         ${LV_THIRDPARTY_DIR}/PDCursesMod/gl/pdcclip.c
@@ -203,20 +199,6 @@ if(LV_BUILD_GUI)
     target_include_directories(pdcurses_sdl2 PUBLIC ${LV_THIRDPARTY_DIR}/PDCursesMod)
     target_compile_definitions(pdcurses_sdl2 PUBLIC PDC_WIDE PDC_FORCE_UTF8 CHTYPE_32)
     target_link_libraries(pdcurses_sdl2 PUBLIC SDL2_ttf::SDL2_ttf-static SDL2::SDL2-static)
-
-    # ---- Dear ImGui (static, SDL2 + OpenGL3 backends) ------------------------
-    set(IMGUI_DIR ${LV_THIRDPARTY_DIR}/imgui)
-    add_library(imgui STATIC
-        ${IMGUI_DIR}/imgui.cpp
-        ${IMGUI_DIR}/imgui_draw.cpp
-        ${IMGUI_DIR}/imgui_tables.cpp
-        ${IMGUI_DIR}/imgui_widgets.cpp
-        ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
-        ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
-    )
-    target_include_directories(imgui PUBLIC ${IMGUI_DIR} ${IMGUI_DIR}/backends)
-    target_compile_definitions(imgui PUBLIC IMGUI_IMPL_OPENGL_LOADER_GL3W)
-    target_link_libraries(imgui PUBLIC SDL2::SDL2-static)
 
     # ---- lv_ui_gui: lv_ui recompiled with PDCursesMod backend ----------------
     add_library(lv_ui_gui STATIC
@@ -236,10 +218,9 @@ if(LV_BUILD_GUI)
     # ---- lv-gui executable ---------------------------------------------------
     add_executable(lv-gui
         src/gui/main_gui.cpp
-        src/gui/menu.cpp
     )
     target_include_directories(lv-gui PRIVATE src)
-    target_link_libraries(lv-gui PRIVATE lv_core lv_ui_gui imgui SDL2::SDL2main)
+    target_link_libraries(lv-gui PRIVATE lv_core lv_ui_gui SDL2::SDL2main)
     find_package(OpenGL REQUIRED)
     target_link_libraries(lv-gui PRIVATE OpenGL::GL ${CMAKE_DL_LIBS})
     if(MSVC)
