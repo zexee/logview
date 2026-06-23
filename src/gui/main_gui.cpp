@@ -63,7 +63,12 @@ void adjust_font_now(lv::ui::AppUi& app_ui, int delta) {
     }
     if (pdc_ttffont) {
         TTF_SetFontKerning(pdc_ttffont, 0);
-        TTF_SetFontHinting(pdc_ttffont, TTF_HINTING_MONO);
+        // MONO hinting snaps glyphs to the pixel grid, producing sharp
+        // output at a handful of native sizes (8, 10, 12, 14, 18, 24…)
+        // but misaligned cells at others.  Use MONO only for even sizes
+        // where it works reliably; fall back to NORMAL hinting elsewhere.
+        TTF_SetFontHinting(pdc_ttffont,
+            (pdc_font_size % 2 == 0) ? TTF_HINTING_MONO : TTF_HINTING_NORMAL);
         TTF_SizeText(pdc_ttffont, "W", &pdc_fwidth, &pdc_fheight);
     }
 
