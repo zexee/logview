@@ -166,26 +166,32 @@ int run(int argc, char** argv) {
         bool running = true;
         while (running) {
             // Intercept Ctrl+= / Ctrl+- for font size adjustment.
+            // Collect events that must stay in the queue for PDCursesMod;
+            // pushing them back inside the poll loop would cause an infinite
+            // re-read of the same event.
             SDL_PumpEvents();
+            std::vector<SDL_Event> for_tui;
             SDL_Event ev;
             while (SDL_PollEvent(&ev)) {
+                bool handled = false;
                 if (ev.type == SDL_QUIT) {
                     running = false;
                     quit_requested = true;
+                    handled = true;
                 } else if (ev.type == SDL_KEYDOWN &&
                            (ev.key.keysym.mod & KMOD_CTRL)) {
                     if (ev.key.keysym.sym == SDLK_EQUALS ||
                         ev.key.keysym.sym == SDLK_PLUS) {
                         adjust_font(app_ui, +1);
-                        continue;
-                    }
-                    if (ev.key.keysym.sym == SDLK_MINUS) {
+                        handled = true;
+                    } else if (ev.key.keysym.sym == SDLK_MINUS) {
                         adjust_font(app_ui, -1);
-                        continue;
+                        handled = true;
                     }
                 }
-                SDL_PushEvent(&ev);
+                if (!handled) for_tui.push_back(ev);
             }
+            for (auto& e : for_tui) SDL_PushEvent(&e);
 
             // PDCursesMod processes SDL events through its getch() chain.
             running = app_ui.tick();
