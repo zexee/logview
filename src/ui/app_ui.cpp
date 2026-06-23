@@ -68,20 +68,38 @@ std::size_t utf8_byte_at_column(std::string_view sv, int col) {
 
 } // namespace
 
-// Physical screen update wrapper. On PDCursesMod's GL backend, subwindow
-// compositing through the standard wnoutrefresh -> curscr -> doupdate chain
-// is unreliable. clearok(curscr) forces doupdate to redraw the entire
-// curscr every frame, which makes subwindow content visible.  The overhead
-// is bounded by the TUI grid size (e.g. 80×25) and is negligible.
-static void pdc_update() {
 #if defined(LV_USE_PDCURSES)
-    extern WINDOW* curscr;
-    if (::curscr != nullptr) {
-        clearok(::curscr, TRUE);
+// Composite subwindows onto stdscr and push to the GL framebuffer.
+// Called at the end of every render() variant.
+static void pdc_flush(WINDOW* log_win, WINDOW* rules_win, WINDOW* editor_win,
+                       const Rect& log_r, const Rect& rules_r, const Rect& editor_r,
+                       bool rules_visible) {
+    werase(stdscr);
+    if (log_win != nullptr && log_win != stdscr) {
+        copywin(log_win, stdscr, 0, 0,
+                log_r.y, log_r.x,
+                log_r.y + log_r.height - 1,
+                log_r.x + log_r.width - 1,
+                FALSE);
     }
-#endif
-    doupdate();
+    if (rules_win != nullptr && rules_win != stdscr && rules_visible) {
+        copywin(rules_win, stdscr, 0, 0,
+                rules_r.y, rules_r.x,
+                rules_r.y + rules_r.height - 1,
+                rules_r.x + rules_r.width - 1,
+                FALSE);
+    }
+    if (editor_win != nullptr && editor_win != stdscr) {
+        copywin(editor_win, stdscr, 0, 0,
+                editor_r.y, editor_r.x,
+                editor_r.y,
+                editor_r.x + editor_r.width - 1,
+                FALSE);
+    }
+    clearok(stdscr, TRUE);
+    wrefresh(stdscr);
 }
+#endif
 
 AppUi::AppUi(MMapFile file, LineIndex index, RuleSet rules, std::string rule_path)
     : file_(std::move(file)), index_(std::move(index)), rules_(std::move(rules)), rule_path_(std::move(rule_path)) {}
@@ -142,7 +160,12 @@ bool AppUi::tick() {
             return running_;
         }
         render_editor();
-        pdc_update();
+#if defined(LV_USE_PDCURSES)
+        pdc_flush(log_window_, rules_window_, editor_window_,
+                  log_rect_, rules_rect_, editor_rect_, rules_visible_);
+#else
+        doupdate();
+#endif
         return running_;
     }
     key = getch();
@@ -228,45 +251,18 @@ void AppUi::destroy_windows() {
 void AppUi::render() {
     if (editor_.active()) {
         render_editor();
-        pdc_update();
-        return;
+    } else {
+        render_log();
+        if (help_active_) {
+            render_help();
+        } else if (rules_visible_) {
+            render_rules();
+        }
+        render_editor();
     }
-    render_log();
-    if (help_active_) {
-        render_help();
-    } else if (rules_visible_) {
-        render_rules();
-    }
-    render_editor();
 #if defined(LV_USE_PDCURSES)
-    // PDCursesMod's GL backend does not reliably propagate subwindow
-    // content through wnoutrefresh -> curscr.  Blit every subwindow onto
-    // stdscr, then wrefresh(stdscr) copies to curscr and invokes doupdate
-    // (which renders curscr to the GL framebuffer).  clearok forces a full
-    // refresh so change-tracking gaps don't skip cells.
-    if (log_window_ != nullptr && log_window_ != stdscr) {
-        copywin(log_window_, stdscr, 0, 0,
-                log_rect_.y, log_rect_.x,
-                log_rect_.y + log_rect_.height - 1,
-                log_rect_.x + log_rect_.width - 1,
-                TRUE);
-    }
-    if (rules_window_ != nullptr && rules_window_ != stdscr && rules_visible_) {
-        copywin(rules_window_, stdscr, 0, 0,
-                rules_rect_.y, rules_rect_.x,
-                rules_rect_.y + rules_rect_.height - 1,
-                rules_rect_.x + rules_rect_.width - 1,
-                TRUE);
-    }
-    if (editor_window_ != nullptr && editor_window_ != stdscr) {
-        copywin(editor_window_, stdscr, 0, 0,
-                editor_rect_.y, editor_rect_.x,
-                editor_rect_.y,
-                editor_rect_.x + editor_rect_.width - 1,
-                TRUE);
-    }
-    clearok(stdscr, TRUE);
-    wrefresh(stdscr);
+    pdc_flush(log_window_, rules_window_, editor_window_,
+              log_rect_, rules_rect_, editor_rect_, rules_visible_);
 #else
     doupdate();
 #endif
