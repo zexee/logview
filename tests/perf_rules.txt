@@ -1,2 +1,2 @@
-ss ERROR
-hh DEBUG
+s ERROR
+h DEBUG

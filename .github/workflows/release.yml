@@ -55,16 +55,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Boost (vcpkg)
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgGitCommitDate: 2024-07-01
-
       - name: Install boost-regex
         run: vcpkg install boost-regex:x64-windows
 
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake
 
       - name: Build
         run: cmake --build build -j --config Release
