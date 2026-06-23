@@ -152,7 +152,7 @@ endif()
 # Enabled with -DLV_BUILD_GUI=ON. Vendored third-party sources live in
 # third_party/ and are built as static libs.
 # ----------------------------------------------------------------------------
-option(LV_BUILD_GUI "Build the cross-platform GUI binary (SDL2 + ImGui)" OFF)
+option(LV_BUILD_GUI "Build the cross-platform GUI binary (SDL2)" OFF)
 
 if(LV_BUILD_GUI)
     set(LV_THIRDPARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
@@ -172,8 +172,7 @@ if(LV_BUILD_GUI)
     set(SDL_CPUINFO OFF CACHE BOOL "" FORCE)
     set(SDL_DUMMYAUDIO ON CACHE BOOL "" FORCE)
     set(SDL_DISKAUDIO OFF CACHE BOOL "" FORCE)
-    # OpenGL is required: PDCursesMod's gl backend uses it, and ImGui's OpenGL3
-    # backend shares the same context.
+    # OpenGL is required: PDCursesMod's gl backend uses it.
     set(SDL_OPENGL ON CACHE BOOL "" FORCE)
     set(SDL_OPENGLES OFF CACHE BOOL "" FORCE)
     set(SDL_VULKAN OFF CACHE BOOL "" FORCE)

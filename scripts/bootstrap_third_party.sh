@@ -37,7 +37,6 @@ clone_if_missing() {
 
 clone_if_missing SDL2        https://github.com/libsdl-org/SDL.git          release-2.30.0
 clone_if_missing SDL2_ttf    https://github.com/libsdl-org/SDL_ttf.git      release-2.22.0
-clone_if_missing imgui       https://github.com/ocornut/imgui.git           v1.91.5
 clone_if_missing PDCursesMod https://github.com/Bill-Gray/PDCursesMod.git   v4.4.0
 
 # SDL2_ttf needs FreeType as a git submodule (vendored build).
