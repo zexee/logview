@@ -165,33 +165,44 @@ int run(int argc, char** argv) {
         // ---- Main loop ------------------------------------------------------
         bool running = true;
         while (running) {
-            // Intercept Ctrl+= / Ctrl+- for font size adjustment.
-            // Collect events that must stay in the queue for PDCursesMod;
-            // pushing them back inside the poll loop would cause an infinite
-            // re-read of the same event.
+            // Intercept Ctrl+= / Ctrl+- without draining the SDL event
+            // queue.  PDCursesMod's getch() -> SDL_PollEvent processes
+            // mouse and keyboard events on its own schedule; we only
+            // peek at keyboard events for the font shortcut and consume
+            // them when they match.
             SDL_PumpEvents();
-            std::vector<SDL_Event> for_tui;
-            SDL_Event ev;
-            while (SDL_PollEvent(&ev)) {
-                bool handled = false;
-                if (ev.type == SDL_QUIT) {
-                    running = false;
-                    quit_requested = true;
-                    handled = true;
-                } else if (ev.type == SDL_KEYDOWN &&
-                           (ev.key.keysym.mod & KMOD_CTRL)) {
-                    if (ev.key.keysym.sym == SDLK_EQUALS ||
-                        ev.key.keysym.sym == SDLK_PLUS) {
+            SDL_Event peek;
+            while (SDL_PeepEvents(&peek, 1, SDL_PEEKEVENT,
+                                  SDL_KEYDOWN, SDL_KEYDOWN) > 0) {
+                if (peek.key.keysym.mod & KMOD_CTRL) {
+                    bool match = false;
+                    if (peek.key.keysym.sym == SDLK_EQUALS ||
+                        peek.key.keysym.sym == SDLK_PLUS) {
                         adjust_font(app_ui, +1);
-                        handled = true;
-                    } else if (ev.key.keysym.sym == SDLK_MINUS) {
+                        match = true;
+                    } else if (peek.key.keysym.sym == SDLK_MINUS) {
                         adjust_font(app_ui, -1);
-                        handled = true;
+                        match = true;
+                    }
+                    if (match) {
+                        SDL_Event dummy;
+                        SDL_PeepEvents(&dummy, 1, SDL_GETEVENT,
+                                       SDL_KEYDOWN, SDL_KEYDOWN);
+                        continue;
                     }
                 }
-                if (!handled) for_tui.push_back(ev);
+                break;
             }
-            for (auto& e : for_tui) SDL_PushEvent(&e);
+
+            // Also peek at SDL_QUIT without consuming non-quit events.
+            SDL_Event quit_ev;
+            if (SDL_PeepEvents(&quit_ev, 1, SDL_GETEVENT,
+                               SDL_QUIT, SDL_QUIT) > 0) {
+                running = false;
+                quit_requested = true;
+            }
+
+            if (!running) break;
 
             // PDCursesMod processes SDL events through its getch() chain.
             running = app_ui.tick();
