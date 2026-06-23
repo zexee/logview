@@ -13,24 +13,39 @@ find_package(Boost REQUIRED COMPONENTS regex)
 
 if(WIN32)
     # ---- PDCursesMod (Windows Console, wide-char / UTF-8) ---------------------
-    set(PDC_WIDE      Y CACHE STRING "" FORCE)
-    set(PDC_UTF8      Y CACHE STRING "" FORCE)
-    set(PDC_BUILD_DLL OFF CACHE STRING "" FORCE)
-    set(PDC_BUILD_TESTS OFF CACHE STRING "" FORCE)
-    set(PDC_BUILD_DEMOS OFF CACHE STRING "" FORCE)
-
+    # PDCursesMod's own CMake build assumes it is the top-level project (it
+    # references CMAKE_SOURCE_DIR throughout), so it breaks when pulled in via
+    # FetchContent/add_subdirectory. Fetch the sources only (SOURCE_SUBDIR
+    # points at a directory without a CMakeLists.txt, so MakeAvailable skips
+    # its configure step) and compile the wincon backend directly, mirroring
+    # the Linux GL backend setup below.
     FetchContent_Declare(
         pdcurses
         GIT_REPOSITORY https://github.com/Bill-Gray/PDCursesMod.git
         GIT_TAG        v4.4.0
         GIT_SHALLOW    TRUE
+        SOURCE_SUBDIR  cmake
     )
-    # PDCursesMod's CMakeLists sets CMAKE_MODULE_PATH from CMAKE_SOURCE_DIR
-    # (the top-level project) instead of CMAKE_CURRENT_SOURCE_DIR, so its
-    # include(build_dependencies) etc. fail when it is pulled in as a
-    # subproject. Pre-seed the module path with its own cmake/ directory.
-    list(APPEND CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR}/_deps/pdcurses-src/cmake)
     FetchContent_MakeAvailable(pdcurses)
+
+    file(GLOB PDC_CORE_SRCS ${pdcurses_SOURCE_DIR}/pdcurses/*.c)
+    add_library(pdcurses STATIC
+        ${PDC_CORE_SRCS}
+        ${pdcurses_SOURCE_DIR}/wincon/pdcclip.c
+        ${pdcurses_SOURCE_DIR}/wincon/pdcdisp.c
+        ${pdcurses_SOURCE_DIR}/wincon/pdcgetsc.c
+        ${pdcurses_SOURCE_DIR}/wincon/pdckbd.c
+        ${pdcurses_SOURCE_DIR}/wincon/pdcscrn.c
+        ${pdcurses_SOURCE_DIR}/wincon/pdcsetsc.c
+        ${pdcurses_SOURCE_DIR}/wincon/pdcutil.c
+    )
+    target_include_directories(pdcurses PUBLIC
+        ${pdcurses_SOURCE_DIR} ${pdcurses_SOURCE_DIR}/wincon)
+    target_compile_definitions(pdcurses
+        PUBLIC PDC_WIDE PDC_FORCE_UTF8 CHTYPE_32
+        PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_link_libraries(pdcurses PUBLIC
+        gdi32 winspool shell32 ole32 comdlg32 advapi32 winmm)
 
     set(LV_TUI_LIBS pdcurses)
     set(LV_TUI_INCLUDE_DIRS "")
