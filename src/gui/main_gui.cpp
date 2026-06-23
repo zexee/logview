@@ -131,21 +131,54 @@ int run(int argc, char** argv) {
         bool running = true;
         while (running) {
             // Drive the TUI one tick first. PDCursesMod's GL backend calls
-            // SDL_PollEvent internally during getch(); letting it run before
-            // ImGui's event processing ensures keyboard events reach the TUI
-            // line editor / normal-mode navigation instead of being consumed
-            // by ImGui_ImplSDL2_ProcessEvent.
+            // SDL_PollEvent internally during getch() to read keyboard/mouse
+            // events. Stronger than ImGui's needs; the TUI must see every
+            // keypress first.
             running = app_ui.tick();
 
-            // Feed remaining SDL events to ImGui (mouse clicks on the menu
-            // bar, window resize, etc.). PDCursesMod's getch() only drains
-            // keyboard events from the queue, so mouse events survive.
+            // Feed remaining SDL events to ImGui, but only for mouse/window
+            // events that ImGui needs to render its menu bar. Keyboard events
+            // MUST stay in the queue so getch() sees them on the next tick().
+            // Without this filter, SDL_PollEvent would consume a keystroke
+            // between ticks and hand it to ImGui_ImplSDL2_ProcessEvent, making
+            // the TUI line editor and normal-mode navigation miss keypresses.
+            SDL_PumpEvents();
             SDL_Event event;
-            while (SDL_PollEvent(&event) != 0) {
+            while (SDL_PeepEvents(
+                       &event, 1, SDL_GETEVENT,
+                       SDL_MOUSEMOTION, SDL_MOUSEMOTION) > 0) {
+                ImGui_ImplSDL2_ProcessEvent(&event);
+            }
+            while (SDL_PeepEvents(
+                       &event, 1, SDL_GETEVENT,
+                       SDL_MOUSEBUTTONDOWN, SDL_MOUSEBUTTONUP) > 0) {
+                ImGui_ImplSDL2_ProcessEvent(&event);
+            }
+            while (SDL_PeepEvents(
+                       &event, 1, SDL_GETEVENT,
+                       SDL_MOUSEWHEEL, SDL_MOUSEWHEEL) > 0) {
+                ImGui_ImplSDL2_ProcessEvent(&event);
+            }
+            while (SDL_PeepEvents(
+                       &event, 1, SDL_GETEVENT,
+                       SDL_WINDOWEVENT, SDL_WINDOWEVENT) > 0) {
                 ImGui_ImplSDL2_ProcessEvent(&event);
                 if (event.type == SDL_QUIT) {
                     running = false;
                     quit_requested = true;
+                }
+            }
+            // Explicitly check quit — SDL_QUIT is not forwarded by the above
+            // filter but we still need to handle it.
+            {
+                SDL_Event quit_event;
+                while (SDL_PeepEvents(
+                           &quit_event, 1, SDL_GETEVENT,
+                           SDL_QUIT, SDL_QUIT) > 0) {
+                    if (quit_event.type == SDL_QUIT) {
+                        running = false;
+                        quit_requested = true;
+                    }
                 }
             }
 
