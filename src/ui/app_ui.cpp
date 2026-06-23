@@ -73,7 +73,7 @@ std::size_t utf8_byte_at_column(std::string_view sv, int col) {
 // Called at the end of every render() variant.
 static void pdc_flush(WINDOW* log_win, WINDOW* rules_win, WINDOW* editor_win,
                        const Rect& log_r, const Rect& rules_r, const Rect& editor_r,
-                       bool rules_visible) {
+                       bool rules_visible, bool rules_focused) {
     extern WINDOW* curscr;
     if (::curscr == nullptr) return;
 
@@ -99,6 +99,31 @@ static void pdc_flush(WINDOW* log_win, WINDOW* rules_win, WINDOW* editor_win,
                 editor_r.x + editor_r.width - 1,
                 FALSE);
     }
+
+    // Draw separator + "Filters" label on stdscr between log and rules.
+    // Must run after werase+copywin so the line survives the frame.
+    if (rules_visible && rules_r.y > log_r.y + log_r.height && log_r.width > 0) {
+        const int line_y = log_r.y + log_r.height;
+        const int label_len = 9;
+        const int left_len = (log_r.width - label_len) / 2;
+        wattron(stdscr, COLOR_PAIR(4));
+        if (left_len > 0) {
+            mvwhline(stdscr, line_y, 0, ACS_HLINE, left_len);
+        }
+        if (rules_focused) {
+            wattron(stdscr, A_REVERSE);
+        }
+        mvwaddstr(stdscr, line_y, left_len, " Filters ");
+        if (rules_focused) {
+            wattroff(stdscr, A_REVERSE);
+        }
+        const int right_start = left_len + label_len;
+        if (right_start < log_r.width) {
+            mvwhline(stdscr, line_y, right_start, ACS_HLINE, log_r.width - right_start);
+        }
+        wattroff(stdscr, COLOR_PAIR(4));
+    }
+
     // Blit all of stdscr onto curscr, then force a full-screen redraw.
     copywin(stdscr, ::curscr, 0, 0, 0, 0, LINES - 1, COLS - 1, FALSE);
     clearok(::curscr, TRUE);
@@ -167,7 +192,8 @@ bool AppUi::tick() {
         render_editor();
 #if defined(LV_USE_PDCURSES)
         pdc_flush(log_window_, rules_window_, editor_window_,
-                  log_rect_, rules_rect_, editor_rect_, rules_visible_);
+                  log_rect_, rules_rect_, editor_rect_, rules_visible_,
+                  focus_ == Focus::Rules);
 #else
         doupdate();
 #endif
@@ -259,7 +285,8 @@ void AppUi::render() {
     }
 #if defined(LV_USE_PDCURSES)
     pdc_flush(log_window_, rules_window_, editor_window_,
-              log_rect_, rules_rect_, editor_rect_, rules_visible_);
+              log_rect_, rules_rect_, editor_rect_, rules_visible_,
+              focus_ == Focus::Rules);
 #else
     doupdate();
 #endif
@@ -281,29 +308,6 @@ void AppUi::render_log() {
     }
     if (focus_ == Focus::Log && !editor_.active()) {
         wattroff(log_window_, COLOR_PAIR(1));
-    }
-    if (rules_rect_.y > log_rect_.y + log_rect_.height && log_rect_.width > 0) {
-        const char* label = " Filters ";
-        const int label_len = 9;
-        const int left_len = (log_rect_.width - label_len) / 2;
-        const int line_y = log_rect_.y + log_rect_.height;
-        wattron(stdscr, COLOR_PAIR(4));
-        if (left_len > 0) {
-            mvwhline(stdscr, line_y, 0, ACS_HLINE, left_len);
-        }
-        if (focus_ == Focus::Rules) {
-            wattron(stdscr, A_REVERSE);
-        }
-        mvwaddstr(stdscr, line_y, left_len, label);
-        if (focus_ == Focus::Rules) {
-            wattroff(stdscr, A_REVERSE);
-        }
-        const int right_start = left_len + label_len;
-        if (right_start < log_rect_.width) {
-            mvwhline(stdscr, line_y, right_start, ACS_HLINE, log_rect_.width - right_start);
-        }
-        wattroff(stdscr, COLOR_PAIR(4));
-        wnoutrefresh(stdscr);
     }
 
     const int content_height = std::max(0, log_rect_.height - 1);
