@@ -136,46 +136,19 @@ int run(int argc, char** argv) {
             // keypress first.
             running = app_ui.tick();
 
-            // Feed remaining SDL events to ImGui, but only for mouse/window
-            // events that ImGui needs to render its menu bar. Keyboard events
-            // MUST stay in the queue so getch() sees them on the next tick().
-            // Without this filter, SDL_PollEvent would consume a keystroke
-            // between ticks and hand it to ImGui_ImplSDL2_ProcessEvent, making
-            // the TUI line editor and normal-mode navigation miss keypresses.
-            SDL_PumpEvents();
-            SDL_Event event;
-            while (SDL_PeepEvents(
-                       &event, 1, SDL_GETEVENT,
-                       SDL_MOUSEMOTION, SDL_MOUSEMOTION) > 0) {
-                ImGui_ImplSDL2_ProcessEvent(&event);
-            }
-            while (SDL_PeepEvents(
-                       &event, 1, SDL_GETEVENT,
-                       SDL_MOUSEBUTTONDOWN, SDL_MOUSEBUTTONUP) > 0) {
-                ImGui_ImplSDL2_ProcessEvent(&event);
-            }
-            while (SDL_PeepEvents(
-                       &event, 1, SDL_GETEVENT,
-                       SDL_MOUSEWHEEL, SDL_MOUSEWHEEL) > 0) {
-                ImGui_ImplSDL2_ProcessEvent(&event);
-            }
-            while (SDL_PeepEvents(
-                       &event, 1, SDL_GETEVENT,
-                       SDL_WINDOWEVENT, SDL_WINDOWEVENT) > 0) {
-                ImGui_ImplSDL2_ProcessEvent(&event);
-                if (event.type == SDL_QUIT) {
-                    running = false;
-                    quit_requested = true;
-                }
-            }
-            // Explicitly check quit — SDL_QUIT is not forwarded by the above
-            // filter but we still need to handle it.
+            // PDCursesMod's GL backend processes all SDL events internally
+            // through getch() -> PDC_check_key -> SDL_PollEvent.  The outer
+            // loop MUST NOT drain events from the queue (via SDL_PollEvent
+            // or SDL_PeepEvents with SDL_GETEVENT for keyboard/mouse types),
+            // otherwise the TUI line editor and normal-mode navigation miss
+            // keypresses.  ImGui's menu bar is a static visual; it does not
+            // need interactive event processing.
             {
-                SDL_Event quit_event;
+                SDL_Event quit_ev;
                 while (SDL_PeepEvents(
-                           &quit_event, 1, SDL_GETEVENT,
+                           &quit_ev, 1, SDL_GETEVENT,
                            SDL_QUIT, SDL_QUIT) > 0) {
-                    if (quit_event.type == SDL_QUIT) {
+                    if (quit_ev.type == SDL_QUIT) {
                         running = false;
                         quit_requested = true;
                     }

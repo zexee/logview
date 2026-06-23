@@ -68,6 +68,21 @@ std::size_t utf8_byte_at_column(std::string_view sv, int col) {
 
 } // namespace
 
+// Physical screen update wrapper. On PDCursesMod's GL backend, subwindow
+// compositing through the standard wnoutrefresh -> curscr -> doupdate chain
+// is unreliable. clearok(curscr) forces doupdate to redraw the entire
+// curscr every frame, which makes subwindow content visible.  The overhead
+// is bounded by the TUI grid size (e.g. 80×25) and is negligible.
+static void pdc_update() {
+#if defined(LV_USE_PDCURSES)
+    extern WINDOW* curscr;
+    if (::curscr != nullptr) {
+        clearok(::curscr, TRUE);
+    }
+#endif
+    doupdate();
+}
+
 AppUi::AppUi(MMapFile file, LineIndex index, RuleSet rules, std::string rule_path)
     : file_(std::move(file)), index_(std::move(index)), rules_(std::move(rules)), rule_path_(std::move(rule_path)) {}
 
@@ -127,7 +142,7 @@ bool AppUi::tick() {
             return running_;
         }
         render_editor();
-        doupdate();
+        pdc_update();
         return running_;
     }
     key = getch();
@@ -146,6 +161,9 @@ void AppUi::prefill_command(const std::string& cmd) {
 
 void AppUi::recreate_windows() {
     destroy_windows();
+#if defined(LV_USE_PDCURSES)
+    resize_term(0, 0);
+#endif
 
     const int rows = std::max(3, screen_.rows());
     const int cols = std::max(20, screen_.cols());
@@ -210,7 +228,7 @@ void AppUi::destroy_windows() {
 void AppUi::render() {
     if (editor_.active()) {
         render_editor();
-        doupdate();
+        pdc_update();
         return;
     }
     render_log();
@@ -221,36 +239,37 @@ void AppUi::render() {
     }
     render_editor();
 #if defined(LV_USE_PDCURSES)
-    // PDCursesMod's GL backend does not reliably composite subwindow
-    // content via the standard wnoutrefresh -> curscr -> doupdate chain.
-    // As a workaround, copy every subwindow's content directly onto
-    // stdscr using copywin, then let doupdate render stdscr to the GL
-    // framebuffer. The copy is O(ncols * nlines) per frame; at typical
-    // terminal sizes (80x25) this is negligible.
+    // PDCursesMod's GL backend does not reliably propagate subwindow
+    // content through wnoutrefresh -> curscr.  Blit every subwindow onto
+    // stdscr, then wrefresh(stdscr) copies to curscr and invokes doupdate
+    // (which renders curscr to the GL framebuffer).  clearok forces a full
+    // refresh so change-tracking gaps don't skip cells.
     if (log_window_ != nullptr && log_window_ != stdscr) {
         copywin(log_window_, stdscr, 0, 0,
                 log_rect_.y, log_rect_.x,
                 log_rect_.y + log_rect_.height - 1,
                 log_rect_.x + log_rect_.width - 1,
-                FALSE);
+                TRUE);
     }
     if (rules_window_ != nullptr && rules_window_ != stdscr && rules_visible_) {
         copywin(rules_window_, stdscr, 0, 0,
                 rules_rect_.y, rules_rect_.x,
                 rules_rect_.y + rules_rect_.height - 1,
                 rules_rect_.x + rules_rect_.width - 1,
-                FALSE);
+                TRUE);
     }
     if (editor_window_ != nullptr && editor_window_ != stdscr) {
         copywin(editor_window_, stdscr, 0, 0,
                 editor_rect_.y, editor_rect_.x,
-                editor_rect_.y,  // single-row editor window
+                editor_rect_.y,
                 editor_rect_.x + editor_rect_.width - 1,
-                FALSE);
+                TRUE);
     }
     clearok(stdscr, TRUE);
-#endif
+    wrefresh(stdscr);
+#else
     doupdate();
+#endif
 }
 
 void AppUi::render_log() {
