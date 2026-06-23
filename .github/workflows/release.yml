@@ -37,13 +37,13 @@ jobs:
         run: cmake -B build_gui -DCMAKE_BUILD_TYPE=Release -DLV_BUILD_GUI=ON
 
       - name: Build GUI
-        run: cmake --build build_gui -j --target lv-gui
+        run: cmake --build build_gui -j --target glv
 
       - name: Package
         run: |
           mkdir -p dist
           cp build/lv dist/
-          cp build_gui/lv-gui dist/
+          cp build_gui/glv dist/
           tar -czf lv-linux-x86_64.tar.gz -C dist .
 
       - uses: actions/upload-artifact@v4

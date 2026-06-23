@@ -25,6 +25,11 @@ if(WIN32)
         GIT_TAG        v4.4.0
         GIT_SHALLOW    TRUE
     )
+    # PDCursesMod's CMakeLists sets CMAKE_MODULE_PATH from CMAKE_SOURCE_DIR
+    # (the top-level project) instead of CMAKE_CURRENT_SOURCE_DIR, so its
+    # include(build_dependencies) etc. fail when it is pulled in as a
+    # subproject. Pre-seed the module path with its own cmake/ directory.
+    list(APPEND CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR}/_deps/pdcurses-src/cmake)
     FetchContent_MakeAvailable(pdcurses)
 
     set(LV_TUI_LIBS pdcurses)
@@ -148,7 +153,7 @@ else()
 endif()
 
 # ----------------------------------------------------------------------------
-# Optional GUI binary (lv-gui): cross-platform SDL2 window.
+# Optional GUI binary (glv): cross-platform SDL2 window.
 # Enabled with -DLV_BUILD_GUI=ON. Vendored third-party sources live in
 # third_party/ and are built as static libs.
 # ----------------------------------------------------------------------------
@@ -215,17 +220,17 @@ if(LV_BUILD_GUI)
         target_compile_options(lv_ui_gui PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
-    # ---- lv-gui executable ---------------------------------------------------
-    add_executable(lv-gui
+    # ---- glv executable ---------------------------------------------------
+    add_executable(glv
         src/gui/main_gui.cpp
     )
-    target_include_directories(lv-gui PRIVATE src)
-    target_link_libraries(lv-gui PRIVATE lv_core lv_ui_gui SDL2::SDL2main)
+    target_include_directories(glv PRIVATE src)
+    target_link_libraries(glv PRIVATE lv_core lv_ui_gui SDL2::SDL2main)
     find_package(OpenGL REQUIRED)
-    target_link_libraries(lv-gui PRIVATE OpenGL::GL ${CMAKE_DL_LIBS})
+    target_link_libraries(glv PRIVATE OpenGL::GL ${CMAKE_DL_LIBS})
     if(MSVC)
-        target_compile_options(lv-gui PRIVATE /utf-8 /W4 /permissive-)
+        target_compile_options(glv PRIVATE /utf-8 /W4 /permissive-)
     else()
-        target_compile_options(lv-gui PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(glv PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 endif()

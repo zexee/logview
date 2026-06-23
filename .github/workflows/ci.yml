@@ -43,16 +43,16 @@ jobs:
         run: cmake -B build_gui -DCMAKE_BUILD_TYPE=Release -DLV_BUILD_GUI=ON
 
       - name: Build GUI
-        run: cmake --build build_gui -j --target lv-gui
+        run: cmake --build build_gui -j --target glv
 
       - name: GUI binary exists
-        run: test -x build_gui/lv-gui
+        run: test -x build_gui/glv
 
-      - name: Upload lv-gui binary
+      - name: Upload glv binary
         uses: actions/upload-artifact@v4
         with:
-          name: lv-gui-linux
-          path: build_gui/lv-gui
+          name: glv-linux
+          path: build_gui/glv
 
   windows:
     runs-on: windows-latest

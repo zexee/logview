@@ -1,4 +1,4 @@
-// Entry point for the lv-gui binary: hosts the lv TUI inside an SDL2 window
+// Entry point for the glv binary: hosts the lv TUI inside an SDL2 window
 // with an OpenGL context. PDCursesMod's GL backend draws the TUI directly.
 //
 // Architecture:
@@ -129,26 +129,26 @@ int run(int argc, char** argv) {
     // ---- Open the log + rule files before touching SDL so we can fail fast.
     lv::MMapFile file;
     if (!file.open(log_path)) {
-        std::fprintf(stderr, "lv-gui: cannot open log file: %s\n", argv[1]);
+        std::fprintf(stderr, "glv: cannot open log file: %s\n", argv[1]);
         return 1;
     }
     lv::LineIndex index;
     if (!index.build(file)) {
-        std::fprintf(stderr, "lv-gui: cannot index log file: %s\n", argv[1]);
+        std::fprintf(stderr, "glv: cannot index log file: %s\n", argv[1]);
         return 1;
     }
     lv::RuleSet rules;
     if (!rules_path.empty()) {
         std::string error;
         if (!rules.load(rules_path, &error)) {
-            std::fprintf(stderr, "lv-gui: %s\n", error.c_str());
+            std::fprintf(stderr, "glv: %s\n", error.c_str());
             return 1;
         }
     }
 
     // ---- SDL2 init with OpenGL context --------------------------------------
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
-        std::fprintf(stderr, "lv-gui: SDL_Init failed: %s\n", SDL_GetError());
+        std::fprintf(stderr, "glv: SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -163,13 +163,13 @@ int run(int argc, char** argv) {
         kInitialWindowWidth, kInitialWindowHeight,
         SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     if (window == nullptr) {
-        std::fprintf(stderr, "lv-gui: SDL_CreateWindow failed: %s\n", SDL_GetError());
+        std::fprintf(stderr, "glv: SDL_CreateWindow failed: %s\n", SDL_GetError());
         SDL_Quit();
         return 1;
     }
     SDL_GLContext gl_context = SDL_GL_CreateContext(window);
     if (gl_context == nullptr) {
-        std::fprintf(stderr, "lv-gui: SDL_GL_CreateContext failed: %s\n", SDL_GetError());
+        std::fprintf(stderr, "glv: SDL_GL_CreateContext failed: %s\n", SDL_GetError());
         SDL_DestroyWindow(window);
         SDL_Quit();
         return 1;
