@@ -251,7 +251,6 @@ void LineEditor::render(WINDOW* window, int width) {
         wmove(window, 0, cursor_x);
     }
 
-    wclrtoeol(window);
     wnoutrefresh(window);
 }
 
