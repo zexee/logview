@@ -52,8 +52,10 @@ if(WIN32)
     set(LV_TUI_COMPILE_OPTS "")
     if(MSVC)
         list(APPEND LV_TUI_COMPILE_OPTS /utf-8 /W4 /permissive-)
-        # Silence C runtime deprecation noise for POSIX-named functions.
-        add_compile_definitions(_CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS)
+        # Silence C runtime deprecation noise; NOMINMAX stops <windows.h>
+        # (pulled in transitively by PDCursesMod's curses.h) from defining
+        # min/max macros that break std::min/std::max.
+        add_compile_definitions(_CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS NOMINMAX)
     else()
         list(APPEND LV_TUI_COMPILE_OPTS -Wall -Wextra -Wpedantic)
     endif()
