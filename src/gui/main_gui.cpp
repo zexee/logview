@@ -147,32 +147,29 @@ int run(int argc, char** argv) {
         // ---- Main loop ------------------------------------------------------
         bool running = true;
         while (running) {
-            // Peek at SDL events and forward mouse / window events to ImGui.
-            // SDL_PEEKEVENT leaves them in the queue so PDCursesMod's
-            // getch() -> SDL_PollEvent also sees them in the next tick().
-            // This makes the ImGui menu bar clickable without stealing
-            // keyboard input from the TUI.
-            SDL_PumpEvents();
-            SDL_Event preview[16];
-            int n = SDL_PeepEvents(preview, 16, SDL_PEEKEVENT,
-                                   SDL_FIRSTEVENT, SDL_LASTEVENT);
-            for (int i = 0; i < n; ++i) {
-                switch (preview[i].type) {
-                case SDL_MOUSEMOTION:
-                case SDL_MOUSEBUTTONDOWN:
-                case SDL_MOUSEBUTTONUP:
-                case SDL_MOUSEWHEEL:
-                case SDL_WINDOWEVENT:
-                    ImGui_ImplSDL2_ProcessEvent(&preview[i]);
-                    break;
+            // Let ImGui see all SDL events first so its menu bar can
+            // react to mouse clicks. Keyboard events that ImGui does not
+            // consume are pushed back into the queue for PDCursesMod's
+            // getch() -> SDL_PollEvent chain in the next tick().
+            SDL_Event ev;
+            while (SDL_PollEvent(&ev)) {
+                bool imgui_wants = ImGui_ImplSDL2_ProcessEvent(&ev);
+                if (ev.type == SDL_QUIT) {
+                    running = false;
+                    quit_requested = true;
+                } else if (ev.type == SDL_KEYDOWN || ev.type == SDL_KEYUP ||
+                           ev.type == SDL_TEXTINPUT) {
+                    // Push keyboard events back so PDCursesMod sees them.
+                    // Mouse and window events stay consumed by ImGui.
+                    SDL_PushEvent(&ev);
                 }
+                (void)imgui_wants;
             }
 
-            // Drive the TUI one tick. PDCursesMod's GL backend owns all
-            // SDL event processing through its getch() chain.
+            // Drive the TUI one tick.
             running = app_ui.tick();
 
-            // Check for SDL_QUIT without touching other event types.
+            // Double-check for SDL_QUIT that may have been pushed back.
             SDL_Event quit_ev;
             while (SDL_PeepEvents(
                        &quit_ev, 1, SDL_GETEVENT,
