@@ -27,11 +27,17 @@ Screen::Screen() {
     // Enable mouse wheel events. BUTTON4 = wheel up, BUTTON5 = wheel down.
     mousemask(BUTTON4_PRESSED | BUTTON5_PRESSED, nullptr);
 #if defined(LV_USE_PDCURSES)
-    // Make the TUI grid fill the entire SDL2 window. Without this,
-    // PDCursesMod defaults to 80×25 cells at the compile-time font
-    // size, leaving black bars on the right and bottom of a larger
-    // window. resize_term(0, 0) tells curses to query the window
-    // for its current pixel dimensions and compute LINES/COLS.
+    // The PDCursesMod GL backend starts with a compile-time cell grid
+    // (25x80) that doesn't match the SDL2 window. resize_term(0, 0)
+    // queries the window dimensions and recomputes LINES/COLS. It is
+    // RARELY called here (screen ctor): initscr has finished, fonts are
+    // loaded, and pdc_window exists. On some window managers the initial
+    // size isn't yet available through SDL_GetWindowSize, which is why
+    // we call it again from AppUi::start() after the event loop has
+    // processed at least one SDL_WINDOWEVENT.
+    //
+    // NOTE: this is a best-effort early resize; the definitive one
+    // happens in AppUi::start().
     resize_term(0, 0);
 #endif
 }

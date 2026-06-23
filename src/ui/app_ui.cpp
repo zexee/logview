@@ -89,6 +89,15 @@ int AppUi::run() {
 }
 
 void AppUi::start() {
+#if defined(LV_USE_PDCURSES)
+    // On PDCursesMod the compile-time cell grid (80×25 default) doesn't
+    // match the SDL2 window. resize_term(0, 0) queries the window for its
+    // pixel dimensions and recomputes LINES/COLS. We call it here (after
+    // initscr and font loading are fully done) rather than in Screen::Screen
+    // because some window managers deliver the final geometry through a
+    // SDL_WINDOWEVENT that hasn't arrived yet during initscr.
+    resize_term(0, 0);
+#endif
     recreate_windows();
     start_filter_job();
 }
@@ -141,9 +150,10 @@ void AppUi::recreate_windows() {
     const int rows = std::max(3, screen_.rows());
     const int cols = std::max(20, screen_.cols());
 #if defined(LV_USE_PDCURSES)
-    // The ImGui menu bar covers the first 2 text rows of the SDL2 window.
-    // Offset the TUI layout so the log/rules content starts below the bar.
-    const int top_pad = 2;
+    // The ImGui menu bar is ~1 text row tall at default font sizes.
+    // Reserve one row so the TUI content starts below the bar instead of
+    // being painted over by it.
+    const int top_pad = 1;
 #else
     const int top_pad = 0;
 #endif
