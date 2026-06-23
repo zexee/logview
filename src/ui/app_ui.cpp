@@ -1179,7 +1179,7 @@ void AppUi::move_log_lines(int direction, int steps) {
 namespace {
 // ncurses exposes getmouse(MEVENT*); PDCursesMod exposes nc_getmouse(MEVENT*)
 // alongside its traditional getmouse(void). Wrap so call sites are portable.
-#if defined(LV_USE_PDCURSES)
+#if defined(LV_USE_PDCURSES) || defined(__PDCURSES__)
 inline int lv_getmouse(MEVENT* e) { return nc_getmouse(e); }
 #else
 inline int lv_getmouse(MEVENT* e) { return getmouse(e); }

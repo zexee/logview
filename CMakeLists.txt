@@ -238,7 +238,7 @@ if(LV_BUILD_GUI)
     endif()
 
     # ---- glv executable ---------------------------------------------------
-    add_executable(glv
+    add_executable(glv WIN32
         src/gui/main_gui.cpp
     )
     target_include_directories(glv PRIVATE src)
