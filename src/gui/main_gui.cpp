@@ -25,11 +25,12 @@
 #include <vector>
 
 extern "C" {
-// PDCursesMod gl backend exports pdc_window; we set it before initscr() so
-// PDCurses attaches to our SDL window instead of creating its own. We also
-// flip pdc_no_swap so PDCursesMod doesn't SDL_GL_SwapWindow before ImGui gets
-// to draw its menu bar over the TUI.
+// PDCursesMod gl backend exports pdc_window and pdc_gl_context; we set both
+// before initscr() so PDCurses attaches to our SDL window and shares our
+// OpenGL context instead of creating its own. pdc_no_swap defers the buffer
+// swap so ImGui can draw on top of the TUI frame.
 extern SDL_Window* pdc_window;
+extern SDL_GLContext pdc_gl_context;
 extern int pdc_no_swap;
 }
 
@@ -101,11 +102,12 @@ int run(int argc, char** argv) {
         SDL_ClearError();
     }
 
-    // ---- Hand the SDL window to PDCursesMod BEFORE initscr(). ---------------
-    // PDCursesMod's gl backend checks pdc_window; if non-null, it attaches to
-    // the existing window instead of creating one. pdc_no_swap defers the
+    // ---- Hand the SDL window + GL context to PDCursesMod BEFORE initscr(). ---
+    // PDCursesMod's gl backend checks pdc_window / pdc_gl_context; if non-null,
+    // it attaches to them instead of creating its own. pdc_no_swap defers the
     // final buffer swap so ImGui can draw on top of the TUI frame.
     pdc_window = window;
+    pdc_gl_context = gl_context;
     pdc_no_swap = 1;
 
     // ---- ImGui init ---------------------------------------------------------

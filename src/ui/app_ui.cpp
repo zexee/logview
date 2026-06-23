@@ -203,6 +203,36 @@ void AppUi::render() {
         render_rules();
     }
     render_editor();
+#if defined(LV_USE_PDCURSES)
+    // PDCursesMod's GL backend does not reliably composite subwindow
+    // content via the standard wnoutrefresh -> curscr -> doupdate chain.
+    // As a workaround, copy every subwindow's content directly onto
+    // stdscr using copywin, then let doupdate render stdscr to the GL
+    // framebuffer. The copy is O(ncols * nlines) per frame; at typical
+    // terminal sizes (80x25) this is negligible.
+    if (log_window_ != nullptr && log_window_ != stdscr) {
+        copywin(log_window_, stdscr, 0, 0,
+                log_rect_.y, log_rect_.x,
+                log_rect_.y + log_rect_.height - 1,
+                log_rect_.x + log_rect_.width - 1,
+                FALSE);
+    }
+    if (rules_window_ != nullptr && rules_window_ != stdscr && rules_visible_) {
+        copywin(rules_window_, stdscr, 0, 0,
+                rules_rect_.y, rules_rect_.x,
+                rules_rect_.y + rules_rect_.height - 1,
+                rules_rect_.x + rules_rect_.width - 1,
+                FALSE);
+    }
+    if (editor_window_ != nullptr && editor_window_ != stdscr) {
+        copywin(editor_window_, stdscr, 0, 0,
+                editor_rect_.y, editor_rect_.x,
+                editor_rect_.y,  // single-row editor window
+                editor_rect_.x + editor_rect_.width - 1,
+                FALSE);
+    }
+    clearok(stdscr, TRUE);
+#endif
     doupdate();
 }
 
