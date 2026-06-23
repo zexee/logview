@@ -439,11 +439,13 @@ void AppUi::render_editor() {
             const int status_cols = utf8_display_width(status_);
             const int visible_cols = std::min<int>(status_cols, width);
             const int start_col = std::max(0, width - visible_cols);
-            const std::size_t skip_bytes = utf8_byte_at_column(status_, width - visible_cols);
-            const std::size_t keep_bytes = utf8_byte_at_column(status_, width) - skip_bytes;
-            mvwaddnstr(editor_window_, 0, start_col,
-                       status_.c_str() + skip_bytes,
-                       static_cast<int>(keep_bytes));
+            // When the status is narrower than the window, skip 0 bytes.
+            // Only skip from the left when the status overflows.
+            const int skip_cols = std::max(0, status_cols - width);
+            const std::size_t skip_bytes = utf8_byte_at_column(status_, skip_cols);
+            const std::size_t keep_bytes = status_.size() - skip_bytes;
+            mvwaddstr(editor_window_, 0, start_col,
+                      status_.c_str() + skip_bytes);
         } else {
             char buf[128];
             std::size_t total = index_.line_count();
@@ -451,7 +453,9 @@ void AppUi::render_editor() {
                 ? filter_bitmap_->count_ones() : total;
             std::snprintf(buf, sizeof(buf), "%zu/%zu  line %zu",
                           visible, total, log_cursor_ + 1);
-            mvwaddstr(editor_window_, 0, 50, buf);
+            const int len = static_cast<int>(std::strlen(buf));
+            const int start = std::max(0, width - len);
+            mvwaddstr(editor_window_, 0, start, buf);
         }
         wnoutrefresh(editor_window_);
     }
