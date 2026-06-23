@@ -27,6 +27,15 @@ extern SDL_GLContext pdc_gl_context;
 extern int pdc_font_size;
 extern TTF_Font* pdc_ttffont;
 extern int pdc_fheight, pdc_fwidth;
+
+// PDCursesMod GL backend glyph cache — must be cleared when the font
+// changes at runtime so the font atlas is rebuilt at the new size.
+extern unsigned pdc_font_texture;
+extern Uint32* pdc_glyph_cache[4];
+extern int pdc_glyph_cache_size[4];
+extern int pdc_glyph_row_capacity, pdc_glyph_col_capacity;
+extern int pdc_glyph_cache_w, pdc_glyph_cache_h;
+extern int* pdc_glyph_start_col;
 }
 
 namespace {
@@ -40,6 +49,9 @@ struct GuiState {
     bool quit = false;
 };
 
+// Font path from config (cached so hot-reload uses the same font file).
+static std::string g_font_path;
+
 void adjust_font_now(lv::ui::AppUi& app_ui, int delta) {
     if (pdc_font_size <= 0) pdc_font_size = 18;
     pdc_font_size = std::max(6, std::min(72, pdc_font_size + delta));
@@ -49,7 +61,7 @@ void adjust_font_now(lv::ui::AppUi& app_ui, int delta) {
         pdc_ttffont = nullptr;
     }
 
-    const char* fname = std::getenv("PDC_FONT");
+    const char* fname = g_font_path.empty() ? nullptr : g_font_path.c_str();
     if (fname) pdc_ttffont = TTF_OpenFont(fname, pdc_font_size);
     if (!pdc_ttffont) {
 #ifdef _WIN32
@@ -63,16 +75,23 @@ void adjust_font_now(lv::ui::AppUi& app_ui, int delta) {
     }
     if (pdc_ttffont) {
         TTF_SetFontKerning(pdc_ttffont, 0);
-        // MONO hinting snaps glyphs to the pixel grid, producing sharp
-        // output at a handful of native sizes (8, 10, 12, 14, 18, 24…)
-        // but misaligned cells at others.  Use MONO only for even sizes
-        // where it works reliably; fall back to NORMAL hinting elsewhere.
         TTF_SetFontHinting(pdc_ttffont,
             (pdc_font_size % 2 == 0) ? TTF_HINTING_MONO : TTF_HINTING_NORMAL);
         TTF_SizeText(pdc_ttffont, "W", &pdc_fwidth, &pdc_fheight);
     }
 
-    lv::save_font_size(pdc_font_size);
+    // Clear PDCursesMod's GL font atlas so it rebuilds at the new size.
+    pdc_font_texture = 0;
+    for (int i = 0; i < 4; ++i) {
+        pdc_glyph_cache[i] = nullptr;
+        pdc_glyph_cache_size[i] = 0;
+    }
+    pdc_glyph_row_capacity = 0;
+    pdc_glyph_col_capacity = 0;
+    pdc_glyph_cache_w = 0;
+    pdc_glyph_cache_h = 0;
+
+    lv::save_config(pdc_font_size, g_font_path);
     app_ui.rebuild_layout();
 }
 
@@ -167,6 +186,7 @@ int run(int argc, char** argv) {
     {
         const int saved = lv::load_font_size();
         if (saved > 0) pdc_font_size = saved;
+        g_font_path = lv::load_font_path();
     }
 
     // Push a synthetic resize event for first-frame sizing.
